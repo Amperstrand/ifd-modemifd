@@ -114,10 +114,21 @@ pub unsafe extern "C" fn IFDHCloseChannel(lun: c_ulong) -> RESPONSECODE {
     })
 }
 
+/// pcsc-lite passes SCARD_IO_HEADER BY VALUE as the 2nd parameter of
+/// IFDHTransmitToICC. DWORD = unsigned long = 8 bytes on LP64, so this is a
+/// 16-byte struct occupying TWO integer registers — it must be declared as
+/// a by-value repr(C) struct or every following argument lands in the wrong
+/// register (the bug behind the zero-blob responses: conwrt-bench #22).
+#[repr(C)]
+pub struct ScardIoHeader {
+    pub protocol: c_ulong,
+    pub length: c_ulong,
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn IFDHTransmitToICC(
     lun: c_ulong,
-    _send_pci: *mut u8, // SCARD_IO_HEADER* (opaque 8 bytes) — unused
+    _send_pci: ScardIoHeader,
     tx: *const u8,
     tx_len: c_ulong,
     rx: *mut u8,
@@ -160,7 +171,13 @@ pub unsafe extern "C" fn IFDHPowerICC(
     atr_len: *mut c_ulong,
 ) -> RESPONSECODE {
     guard(|| {
-        if get_reader(lun).is_none() { return IFD_COMMUNICATION_ERROR; }
+        let r = match get_reader(lun) {
+            Some(r) => r,
+            None => return IFD_COMMUNICATION_ERROR,
+        };
+        if _action == IFD_POWER_UP {
+            r.normalize();
+        }
         if atr.is_null() || atr_len.is_null() {
             return IFD_COMMUNICATION_ERROR;
         }

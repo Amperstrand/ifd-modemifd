@@ -1,21 +1,21 @@
 //! One Reader = one modem (one PC/SC slot). Transport: TCP to a bridge
-//! (socat) on the modem host. AT semantics proven on the bench (2026-09-27):
-//! drain -> send -> read until OK/ERROR -> retry-with-reconnect on silence.
-
-
-fn append_log(msg: &str) {
-    use std::fs::OpenOptions;
-    use std::io::Write;
-    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/tmp/ifd-modemifd-reader.log") {
-        let _ = writeln!(f, "{}", msg);
-    }
-}
+//! (socat) on the modem host.
+//!
+//! Protocol findings baked in (conwrt-bench #21/#22, RG502Q-EA):
+//! - ATE1 echo-correlation: the echo of our command marks the boundary
+//!   between stale/foreign traffic (URCs carry no echo) and our response.
+//! - Pacing: back-to-back CSIM bursts trigger SIM-session thrash on some
+//!   firmwares; a modest gap between transmits is cheap insurance. Presence
+//!   probes must NOT be paced (pcscd polls presence frequently).
 
 use crate::at;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+const TRANSMIT_GAP_MS: u64 = 400;
+const PRESENCE_CACHE_MS: u64 = 5000;
 
 pub struct Reader {
     pub target: String,
@@ -29,6 +29,14 @@ pub enum AtResult {
     Ok(String),
     Err(String),
     Transport,
+}
+
+fn append_log(msg: &str) {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/tmp/ifd-modemifd-reader.log") {
+        let _ = writeln!(f, "{}", msg);
+    }
 }
 
 impl Reader {
@@ -63,18 +71,13 @@ impl Reader {
         self.stream.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// One AT exchange. Caller holds no other locks; internal locking on
-    /// the stream only.
-    fn at_once(&self, cmd: &str, total: Duration) -> AtResult {
-        let mut guard = self.stream_slot();
-        if guard.is_none() {
-            *guard = self.connect();
-        }
-        let stream = match guard.as_mut() {
-            Some(s) => s,
-            None => return AtResult::Transport,
-        };
-        // drain pending bytes (URCs from the shared modem port)
+    /// drain + optional pacing + write. Caller holds the stream guard.
+    fn prime_and_send(
+        &self,
+        stream: &mut TcpStream,
+        cmd: &str,
+        pace: bool,
+    ) -> Result<(), ()> {
         let _ = stream.set_nonblocking(true);
         let mut sink = [0u8; 2048];
         let deadline = Instant::now() + Duration::from_millis(120);
@@ -83,131 +86,43 @@ impl Reader {
                 Ok(0) => break,
                 Ok(_) => {}
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                Err(_) => {
-                    *guard = None;
-                    return AtResult::Transport;
-                }
+                Err(_) => return Err(()),
             }
         }
         let _ = stream.set_nonblocking(false);
-        let line = format!("{}\r", cmd);
-        if stream.write_all(line.as_bytes()).is_err() {
-            *guard = None;
-            return AtResult::Transport;
-        }
-        let mut resp = Vec::with_capacity(2048);
-        let start = Instant::now();
-        loop {
-            let waited = start.elapsed();
-            if waited >= total {
-                break;
-            }
-            let _ = stream.set_read_timeout(Some(Duration::from_millis(150)));
-            let mut chunk = [0u8; 1024];
-            match stream.read(&mut chunk) {
-                Ok(0) => {
-                    *guard = None;
-                    return AtResult::Transport;
-                }
-                Ok(n) => {
-                    resp.extend_from_slice(&chunk[..n]);
-                    let s = String::from_utf8_lossy(&resp).into_owned();
-                    if s.contains("OK\r") {
-                        return AtResult::Ok(s);
-                    }
-                    if s.contains("ERROR") {
-                        return AtResult::Err(s);
-                    }
-                }
-                Err(ref e)
-                    if e.kind() == std::io::ErrorKind::WouldBlock
-                        || e.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => {
-                    *guard = None;
-                    return AtResult::Transport;
-                }
-            }
-        }
-        AtResult::Ok(String::from_utf8_lossy(&resp).into_owned()) // soft timeout
-    }
-
-    /// Hardened exchange: one retry on transport error or silent response.
-    pub fn at(&self, cmd: &str, total: Duration) -> AtResult {
-        let first = self.at_once(cmd, total);
-        match first {
-            AtResult::Transport => self.at_once(cmd, total),
-            AtResult::Ok(ref s) if s.is_empty() => {
-                *self.stream_slot() = None; // force reconnect
-                let _ = self.at_once("AT", Duration::from_millis(1000));
-                self.at_once(cmd, total)
-            }
-            other => other,
-        }
-    }
-
-    /// Prefix-matched exchange: keeps reading (discarding unrelated URC
-    /// traffic such as foreign +CPIN answers on the shared port) until a
-    /// line starting with `prefix` is seen and the command completes, or
-    /// the overall timeout expires. This is the robust pattern lpac uses.
-    pub fn at_expect(&self, cmd: &str, prefix: &str, total: Duration) -> AtResult {
-        match self.at_expect_once(cmd, prefix, total) {
-            AtResult::Ok(s) => {
-                if s.contains(prefix) {
-                    AtResult::Ok(s)
-                } else {
-                    std::thread::sleep(Duration::from_millis(350));
-                    *self.stream_slot() = None;
-                    self.at_expect_once(cmd, prefix, total)
-                }
-            }
-            AtResult::Transport => self.at_expect_once(cmd, prefix, total),
-            other => other,
-        }
-    }
-
-    fn at_expect_once(&self, cmd: &str, prefix: &str, total: Duration) -> AtResult {
-        let mut guard = self.stream_slot();
-        if guard.is_none() {
-            *guard = self.connect();
-        }
-        let stream = match guard.as_mut() {
-            Some(s) => s,
-            None => return AtResult::Transport,
-        };
-        let _ = stream.set_nonblocking(true);
-        let mut sink = [0u8; 2048];
-        let deadline = Instant::now() + Duration::from_millis(120);
-        while Instant::now() < deadline {
-            match stream.read(&mut sink) {
-                Ok(0) => break,
-                Ok(_) => {}
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                Err(_) => {
-                    *guard = None;
-                    return AtResult::Transport;
-                }
-            }
-        }
-        let _ = stream.set_nonblocking(false);
-        // Pacing: the RG502Q firmware thrashes SIM sessions when AT
-        // commands arrive back-to-back (each triggers a +CPIN URC and can
-        // swallow the real response). 250ms between commands is stable.
-        {
+        if pace {
             let mut lc = self.last_cmd.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(t) = *lc {
-                let wait = Duration::from_millis(250).saturating_sub(t.elapsed());
+                let wait = Duration::from_millis(TRANSMIT_GAP_MS).saturating_sub(t.elapsed());
                 if !wait.is_zero() {
                     std::thread::sleep(wait);
                 }
             }
             *lc = Some(Instant::now());
         }
-        if stream.write_all(format!("{}\r", cmd).as_bytes()).is_err() {
+        stream
+            .write_all(format!("{}\r", cmd).as_bytes())
+            .map_err(|_| ())
+    }
+
+    /// Echo-correlated, prefix-matched exchange. `pace` inserts the
+    /// inter-command gap (transmits: yes; presence probes: no).
+    fn at_full(&self, cmd: &str, prefix: &str, total: Duration, pace: bool) -> AtResult {
+        let mut guard = self.stream_slot();
+        if guard.is_none() {
+            *guard = self.connect();
+        }
+        let stream = match guard.as_mut() {
+            Some(s) => s,
+            None => return AtResult::Transport,
+        };
+        if self.prime_and_send(stream, cmd, pace).is_err() {
             *guard = None;
             return AtResult::Transport;
         }
         let mut resp = Vec::with_capacity(2048);
         let start = Instant::now();
+        let mut echo_off: Option<usize> = None;
         let mut saw_prefix = false;
         loop {
             if start.elapsed() >= total {
@@ -223,22 +138,23 @@ impl Reader {
                 Ok(n) => {
                     resp.extend_from_slice(&chunk[..n]);
                     let s = String::from_utf8_lossy(&resp).into_owned();
-                    if !saw_prefix && s.contains(prefix) {
-                        saw_prefix = true;
+                    if echo_off.is_none() {
+                        if let Some(p) = s.find(cmd) {
+                            echo_off = Some(p + cmd.len());
+                        }
                     }
-                    if saw_prefix {
-                        // command completes at OK/ERROR after our prefix
-                        if s.contains("OK\r") {
-                            return AtResult::Ok(s);
+                    if let Some(off) = echo_off {
+                        let tail = &s[off..];
+                        if !saw_prefix && tail.contains(prefix) {
+                            saw_prefix = true;
                         }
-                        if s.contains("ERROR") {
-                            return AtResult::Err(s);
-                        }
-                    } else if s.contains("ERROR") && !s.contains(prefix) {
-                        // modem rejected OUR command outright (before any prefix)
-                        // heuristic: only trust this near the end
-                        if start.elapsed() >= total - Duration::from_millis(600) {
-                            return AtResult::Err(s);
+                        if saw_prefix {
+                            if tail.contains("OK\r") {
+                                return AtResult::Ok(s);
+                            }
+                            if tail.contains("ERROR") {
+                                return AtResult::Err(s);
+                            }
                         }
                     }
                 }
@@ -254,22 +170,41 @@ impl Reader {
         AtResult::Ok(String::from_utf8_lossy(&resp).into_owned())
     }
 
-    /// APDU exchange over AT+CSIM (basic + logical channels: raw MANAGE
-    /// CHANNEL passes through on proven firmwares).
+    /// Paced, hardened exchange with one patient retry.
+    pub fn at_expect(&self, cmd: &str, prefix: &str, total: Duration) -> AtResult {
+        match self.at_full(cmd, prefix, total, true) {
+            AtResult::Ok(s) if s.contains(prefix) => AtResult::Ok(s),
+            AtResult::Ok(_) => {
+                std::thread::sleep(Duration::from_millis(350));
+                *self.stream_slot() = None;
+                match self.at_full(cmd, prefix, total, true) {
+                    AtResult::Ok(s2) if s2.contains(prefix) => AtResult::Ok(s2),
+                    other => other,
+                }
+            }
+            AtResult::Transport => self.at_full(cmd, prefix, total, true),
+            other => other,
+        }
+    }
+
+    /// APDU exchange over AT+CSIM (basic + logical channels pass through).
     pub fn transmit(&self, apdu: &[u8]) -> Result<Vec<u8>, ()> {
         if apdu.len() > 512 || apdu.is_empty() {
             return Ok(vec![0x6F, 0x00]);
         }
         let hex = at::bin2hex(apdu);
         let cmd = format!("AT+CSIM={},\"{}\"", apdu.len() * 2, hex);
-        append_log(&format!("XMIT {} -> {:?}", hex, cmd));
+        append_log(&format!("XMIT {}", hex));
         match self.at_expect(&cmd, "+CSIM:", Duration::from_millis(8000)) {
             AtResult::Ok(resp) => {
-                append_log(&format!("  RESP {:?}", resp));
-                at::parse_csim(&resp).ok_or(())
+                let parsed = at::parse_csim(&resp);
+                append_log(&format!("  RESP parsed={:?}", parsed.as_ref().map(|v| v.len())));
+                parsed.ok_or(())
             }
-            AtResult::Err(_) => Ok(vec![0x6F, 0x00]), // modem refused: map to SW 6F00
-            AtResult::Transport => Err(()),
+            // Modem refused OR went silent after retries: surface a
+            // card-level SW instead of killing the PC/SC session — tools
+            // like pySim-shell probe unknown AIDs and must survive them.
+            _ => Ok(vec![0x6F, 0x00]),
         }
     }
 
@@ -278,24 +213,24 @@ impl Reader {
             let ts = self.presence_ts.lock().unwrap_or_else(|e| e.into_inner());
             let p = self.present.lock().unwrap_or_else(|e| e.into_inner());
             if let (Some(t), Some(v)) = (ts.as_ref(), p.as_ref()) {
-                if t.elapsed() < Duration::from_secs(3) {
+                if t.elapsed() < Duration::from_millis(PRESENCE_CACHE_MS) {
                     return *v;
                 }
             }
         }
         let mut p = false;
-        match self.at_expect("AT+CPIN?", "+CPIN:", Duration::from_millis(4000)) {
-            AtResult::Ok(resp) => {
-                p = at::parse_cpin_present(&resp);
-                if !p {
-                    *self.stream_slot() = None; // stale/contended: force fresh conn
-                    if let AtResult::Ok(r2) = self.at_expect("AT+CPIN?", "+CPIN:", Duration::from_millis(4000)) {
-                        p = at::parse_cpin_present(&r2);
-                    }
-                }
+        let mut got = false;
+        // Unpaced: pcscd's status thread polls presence frequently.
+        if let AtResult::Ok(resp) = self.at_full("AT+CPIN?", "+CPIN:", Duration::from_millis(2500), false) {
+            if resp.contains("+CPIN:") {
+                p = true;
+                got = true;
             }
-            _ => {
-                *self.stream_slot() = None;
+        }
+        if !got {
+            *self.stream_slot() = None;
+            if let AtResult::Ok(r2) = self.at_full("AT+CPIN?", "+CPIN:", Duration::from_millis(2500), false) {
+                p = r2.contains("+CPIN:");
             }
         }
         *self.presence_ts.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
@@ -303,10 +238,23 @@ impl Reader {
         p
     }
 
-    /// Session init, modelled on lpac's connect probe.
+    /// Session init (lpac-style capability probe). Echo ON for correlation.
     pub fn init_handshake(&self) -> bool {
-        matches!(self.at("ATE0", Duration::from_millis(1500)), AtResult::Ok(_))
-            && matches!(self.at("AT+CSIM=?", Duration::from_millis(2000)), AtResult::Ok(_))
+        matches!(self.at_full("ATE1", "OK", Duration::from_millis(2000), false), AtResult::Ok(_))
+            && matches!(self.at_full("AT+CSIM=?", "OK", Duration::from_millis(2500), false), AtResult::Ok(_))
+    }
+
+
+    /// PC/SC clients expect a freshly reset card on SCardConnect. A modem
+    /// cannot cold-reset its SIM on demand; the closest safe emulation is
+    /// closing any leaked logical channels and re-selecting MF, so every
+    /// session starts from the card's root state.
+    pub fn normalize(&self) {
+        for ch in [1u8, 2u8] {
+            let _ = self.transmit(&[ch, 0x70, 0x80, ch, 0x00]);
+        }
+        let _ = self.transmit(&[0x00, 0xA4, 0x00, 0x0C, 0x02, 0x3F, 0x00]);
+        append_log("normalize: channels closed, MF selected");
     }
 
     pub fn close(&self) {

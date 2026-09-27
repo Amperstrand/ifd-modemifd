@@ -5,7 +5,7 @@ use reader::Reader;
 fn main() {
     let r = Reader::new("192.168.13.124:7002");
     println!("handshake: {}", r.init_handshake());
-    match r.at("AT+CPIN?", std::time::Duration::from_millis(2500)) {
+    match r.at_expect("AT+CPIN?", "+CPIN:", std::time::Duration::from_millis(2500)) {
         reader::AtResult::Ok(s) => println!("CPIN resp: {:?}", s),
         other => println!("CPIN other: {:?}", matches!(other, reader::AtResult::Err(_))),
     }
