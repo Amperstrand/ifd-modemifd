@@ -1,0 +1,16 @@
+[package]
+name = "ifd-modemifd"
+version = "0.1.0"
+edition = "2021"
+license = "LGPL-2.1-or-later"
+description = "pcscd IFD handler exposing a cellular modem SIM slot (AT+CSIM over TCP/serial) as a PC/SC reader"
+repository = "https://github.com/Amperstrand/ifd-modemifd"
+
+[lib]
+name = "ifd_modemifd"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
