@@ -174,6 +174,12 @@ impl Reader {
     pub fn at_expect(&self, cmd: &str, prefix: &str, total: Duration) -> AtResult {
         match self.at_full(cmd, prefix, total, true) {
             AtResult::Ok(s) if s.contains(prefix) => AtResult::Ok(s),
+            // Echo seen but no prefix: the modem heard us and chose not to
+            // answer (e.g. firmware-intercepted ISD-R select). Retrying
+            // rarely helps and costs probe-heavy tools 8s per unknown AID —
+            // treat as final; transmit maps it to SW 6F00.
+            AtResult::Ok(s) if s.contains(cmd) => AtResult::Ok(s),
+            // No echo at all: likely transport hiccup — reconnect + retry.
             AtResult::Ok(_) => {
                 std::thread::sleep(Duration::from_millis(350));
                 *self.stream_slot() = None;
@@ -199,7 +205,7 @@ impl Reader {
             AtResult::Ok(resp) => {
                 let parsed = at::parse_csim(&resp);
                 append_log(&format!("  RESP parsed={:?}", parsed.as_ref().map(|v| v.len())));
-                parsed.ok_or(())
+                Ok(parsed.unwrap_or_else(|| vec![0x6F, 0x00]))
             }
             // Modem refused OR went silent after retries: surface a
             // card-level SW instead of killing the PC/SC session — tools
