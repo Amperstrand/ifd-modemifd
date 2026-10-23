@@ -3,7 +3,9 @@
 #[path = "../src/reader.rs"] mod reader;
 use reader::Reader;
 fn main() {
-    let r = Reader::new("192.168.13.124:7002");
+    let target = std::env::args().nth(1)
+        .unwrap_or_else(|| { eprintln!("usage: direct <ip:port>  (socat modem-AT bridge)"); std::process::exit(2) });
+    let r = Reader::new(&target);
     println!("handshake: {}", r.init_handshake());
     match r.at_expect("AT+CPIN?", "+CPIN:", std::time::Duration::from_millis(2500)) {
         reader::AtResult::Ok(s) => println!("CPIN resp: {:?}", s),
