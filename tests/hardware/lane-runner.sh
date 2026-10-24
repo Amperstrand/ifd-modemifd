@@ -83,6 +83,13 @@ teardown() {
     pkill -f "systemd-socket-activate -l $LANE_SOCK" 2>/dev/null || true
     pkill -f "pcscd --foreground -c $LANE_CONF_DIR" 2>/dev/null || true
     rm -f "$LANE_SOCK" 2>/dev/null || true
+    if [ -n "${BEAT_PID:-}" ]; then
+        kill "$BEAT_PID" 2>/dev/null || true
+        BEAT_PID=""
+    fi
+    if [ -n "${LANE_SSH:-}" ] && [ "${MODEM_LANE_SKIP:-0}" != "1" ]; then
+        timeout 15 ssh -o BatchMode=yes "$LANE_SSH" "modem-lane release $LANE_OWNER" 2>/dev/null || true
+    fi
 }
 # shellcheck disable=SC2317  # invoked only via trap
 trap teardown EXIT INT TERM
@@ -190,6 +197,31 @@ fi
 
 hw_preflight
 say "lane-runner: hardware mode — private pcscd lane '$LANE'"
+
+# Cross-lane modem mutex (protocol agreed 2026-10-24; helper on the
+# router, source of truth conwrt-bench tools/modem-lane.sh). Every modem
+# op — AT ports, CSIM, pcscd lanes, CFUN/QUIMSLOT — must hold it; bare
+# readers byte-steal each other otherwise (tonight's live lesson).
+LANE_OWNER="${LANE_OWNER:-modem-hil}"
+LANE_SSH=""
+case "$MODEMIFD_ADDR" in
+    ssh://*) LANE_SSH="${MODEMIFD_ADDR#ssh://}"; LANE_SSH="${LANE_SSH%%/*}" ;;
+esac
+if [ "${MODEM_LANE_SKIP:-0}" != "1" ]; then
+    if [ -z "$LANE_SSH" ]; then
+        echo "lane-runner.sh: cannot derive router host from MODEMIFD_ADDR for the modem-lane lock." >&2
+        echo "  Set MODEM_LANE_HOST (router ssh host) or MODEM_LANE_SKIP=1 to proceed unguarded." >&2
+        exit 3
+    fi
+    if ! timeout 15 ssh -o BatchMode=yes "$LANE_SSH" "modem-lane take $LANE_OWNER 'ifd-modemifd lane: $SUITE suite, pid $$'" 2>&1; then
+        echo "lane-runner.sh: modem-lane lock refused — another lane holds the modem." >&2
+        exit 3
+    fi
+    BEAT_PID=""
+    (while :; do sleep 60; timeout 15 ssh -o BatchMode=yes "$LANE_SSH" "modem-lane heartbeat $LANE_OWNER" 2>/dev/null; done) &
+    BEAT_PID=$!
+fi
+
 printf 'FRIENDLYNAME %s\nDEVICENAME %s\nLIBPATH %s\nCHANNELID 1\n' \
     "$FRIENDLYNAME" "$MODEMIFD_ADDR" "$SO_FILE" > "$LANE_CONF_DIR/modemifd.conf" || exit 3
 
