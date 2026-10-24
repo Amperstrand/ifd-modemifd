@@ -122,6 +122,30 @@ hardware round on the RG502Q has been run yet — see
 - Logical channels: raw MANAGE CHANNEL passes through AT+CSIM on proven
   firmwares (no CCHO/CGLA interception needed).
 
+## Debug logging (v3.4.1)
+
+Debug logging is **off by default**, opt-in by environment variable. The
+defaults come from a bench finding (2026-10-24): the pre-hardening
+driver's debug gate was compiled on and wrote full APDU hex
+world-readable (0644) to a fixed `/tmp` path — authentication and
+provisioning payloads on disk — and a pre-planted symlink would have
+redirected the append into arbitrary files.
+
+| Variable | Effect |
+|---|---|
+| `IFD_MODMIFD_DEBUG` | master gate: any value enables the log; unset, no log file is ever opened. (Spelling is `MODMIFD` — no second `E` — matching the code.) |
+| `IFD_MODEMIFD_LOG_APDU` | additionally logs APDU payload hex; without it, transmits are recorded as lengths only (`XMIT len=N`). (This one IS `MODEMIFD`.) |
+| `IFD_MODMIFD_LOG_PATH` | log path override (default `/tmp/ifd-modemifd.log`), e.g. for bench isolation. |
+
+File behavior: created `0600`, append-only; if the target path is a
+symlink, logging is refused outright rather than followed. The
+environment decision is cached per process (`OnceLock`), so the
+variables must be set on the pcscd daemon itself (e.g. via its systemd
+unit), not on the client application. Software evidence:
+`tests/logging.rs` (off by default) and `tests/logging_enabled.rs`
+(hex redaction + `0600`) — deliberately separate test binaries because
+of that same OnceLock cache.
+
 ## Known limitations
 
 - Response-lag aliasing under extreme modem thrash: when the firmware enters
