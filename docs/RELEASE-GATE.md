@@ -58,7 +58,7 @@ dedicated unit test exists for the ABI itself).
 | v3.4 (fa42259) | No-resend transport semantics + strict CSIM framing | software criteria: mock-modem battery green (no-resend invariants, classification, framing) | PASS | `tests/mock_at.rs` 15/15 |
 | v3.4 | (same version) hardware criteria: post-v3.4 behavior re-validated on the RG502Q bench | **BLOCKED** | Hardware lane owns the modem; no post-v3.4 hardware round exists yet. Not a code defect — software evidence above is green. Owner: hardware lane. |
 | v3.4.1 (2d50e52) | APDU log security | logging off by default; 0600 creation; symlink refusal; hex only under `IFD_MODEMIFD_LOG_APDU` | PASS | `tests/logging.rs`, `tests/logging_enabled.rs` 2/2. (As-shipped evidence gap: no test exercised symlink refusal — caught by the post-merge Codex audit, closed in v3.4.2 below.) |
-| v3.4.2 (post-merge Codex audit of PR #2) | Log-open hardening | symlink refusal enforced atomically at open (`O_NOFOLLOW`), closing the check-to-open race; existing looser-permission logs (pre-v3.4.1 `0644`) tightened to `0600` on open via the fd | PASS | `tests/logging_symlink.rs` (planted-symlink refusal), `tests/logging_repair.rs` (0644→0600, RED→GREEN) |
+| v3.4.2 (post-merge Codex audit of PR #2) | Log-open hardening | symlink refusal enforced atomically at open (`O_NOFOLLOW`), closing the check-to-open race; existing looser-permission logs (pre-v3.4.1 `0644`) tightened to `0600` on open via the fd — **fail closed** when the tightening fails (EPERM on a foreign-owned file) | PASS | `tests/logging_symlink.rs` (planted-symlink refusal), `tests/logging_repair.rs` (0644→0600, RED→GREEN), `tests/logging_failclosed.rs` (nobody-vs-0666 EPERM repro via passwordless sudo; skips with a note where sudo is unavailable) |
 
 ## Open items (SKIP / BLOCKED registry — recorded gaps, not promises)
 
@@ -72,7 +72,7 @@ dedicated unit test exists for the ABI itself).
 
 ## Using this gate
 
-1. Regenerate software evidence: `cargo build --release && cargo test --release` — expect 19/19 (15 mock_at + 4 logging).
+1. Regenerate software evidence: `cargo build --release && cargo test --release` — expect 21/21 (15 mock_at + 6 logging across 5 binaries; the fail-closed probe skips with a printed note where passwordless sudo is unavailable).
 2. Hardware criteria: only the hardware lane executes them; a new run
    supersedes the recorded one only when its report lands (stamped,
    persistent — never green-by-default).

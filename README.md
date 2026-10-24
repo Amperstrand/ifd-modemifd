@@ -144,7 +144,9 @@ redirected the append into arbitrary files.
 
 File behavior: created `0600`, append-only; an existing log file with
 looser permissions (e.g. the pre-v3.4.1 world-readable `0644` log) is
-tightened to `0600` on open; a symlinked log path is refused outright
+tightened to `0600` on open; if that tightening fails (a writable file
+owned by another user), logging fails closed — nothing is written; a
+symlinked log path is refused outright
 rather than followed — enforced atomically at open (`O_NOFOLLOW`), not
 just by a pre-check. The environment decision is cached per process
 (`OnceLock`), so the variables must be set on the pcscd daemon itself
