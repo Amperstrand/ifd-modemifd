@@ -142,14 +142,18 @@ redirected the append into arbitrary files.
 | `IFD_MODEMIFD_LOG_APDU` | additionally logs APDU payload hex; without it, transmits are recorded as lengths only (`XMIT len=N`). (This one IS `MODEMIFD`.) |
 | `IFD_MODMIFD_LOG_PATH` | log path override (default `/tmp/ifd-modemifd.log`), e.g. for bench isolation. |
 
-File behavior: created `0600`, append-only; if the target path is a
-symlink, logging is refused outright rather than followed. The
-environment decision is cached per process (`OnceLock`), so the
-variables must be set on the pcscd daemon itself (e.g. via its systemd
-unit), not on the client application. Software evidence:
-`tests/logging.rs` (off by default) and `tests/logging_enabled.rs`
-(hex redaction + `0600`) — deliberately separate test binaries because
-of that same OnceLock cache.
+File behavior: created `0600`, append-only; an existing log file with
+looser permissions (e.g. the pre-v3.4.1 world-readable `0644` log) is
+tightened to `0600` on open; a symlinked log path is refused outright
+rather than followed — enforced atomically at open (`O_NOFOLLOW`), not
+just by a pre-check. The environment decision is cached per process
+(`OnceLock`), so the variables must be set on the pcscd daemon itself
+(e.g. via its systemd unit), not on the client application. Software
+evidence: `tests/logging.rs` (off by default), `tests/logging_enabled.rs`
+(hex redaction + `0600` creation), `tests/logging_repair.rs` (legacy
+`0644` tightened on open), `tests/logging_symlink.rs` (refusal through a
+planted symlink) — deliberately separate test binaries because of that
+same OnceLock cache.
 
 ## Known limitations
 
