@@ -135,16 +135,18 @@ fn main() {
     );
 
     // Pacing floor via pcscd's env (IFD_MODMIFD_TX_GAP_MS=60 in the
-    // runner): a paced transmit must not return before the floor.
+    // runner). Two CONSECUTIVE transmits: the second's duration is the
+    // remainder of the floor since the first's send — bounded so the
+    // 400 ms default (env not reaching the driver) FAILS the check,
+    // while normal response jitter does not.
+    let _ = card.transmit(&SELECT_MF, &mut rsp).expect("paced tx1");
     let t = Instant::now();
-    let _resp = card
-        .transmit(&SELECT_MF, &mut rsp)
-        .expect("paced SCardTransmit");
+    let _ = card.transmit(&SELECT_MF, &mut rsp).expect("paced tx2");
     let paced_ms = t.elapsed().as_millis();
     check(
         "tx_gap_env_floor",
-        paced_ms >= 50 && paced_ms <= 2000,
-        format!("{paced_ms} ms (floor 60 expected, 400 = env ignored)"),
+        paced_ms >= 30 && paced_ms <= 350,
+        format!("{paced_ms} ms (override 60 expected; >350 = 400 ms default leaked through)"),
     );
 
     // Second reader through the same pcscd: independent session; the
