@@ -27,7 +27,7 @@ Software — reproducible on any host, `cargo build --release && cargo test --re
 | Evidence | Command | Result |
 |---|---|---|
 | `tests/mock_at.rs` — transport semantics: no-resend invariants, AtOutcome classification, echo correlation, strict CSIM framing | `cargo test --release --test mock_at` | 15/15 PASS |
-| `tests/logging.rs` + `tests/logging_enabled.rs` — log off by default, APDU hex redaction, 0600 creation | `cargo test --release --test logging --test logging_enabled` | 2/2 PASS |
+| `tests/logging.rs` + `tests/logging_enabled.rs` + `tests/logging_repair.rs` + `tests/logging_symlink.rs` — log off by default, APDU hex redaction, 0600 creation, legacy-0644 tightening, symlink refusal | `cargo test --release --test logging --test logging_enabled --test logging_repair --test logging_symlink` | 4/4 PASS |
 | Release build, std-only crate (no runtime deps; `pcsc` is a dev-dependency for examples only) | `cargo build --release` | clean |
 
 Hardware — recorded runs, **not** re-executed on demand. Owner of any
@@ -57,7 +57,8 @@ dedicated unit test exists for the ABI itself).
 | v4.0 (3a475eb, = origin/master) | Hardware validation gate + production-proven | phased `validate.sh` gate exists and its recorded run is green; sustained + BPP-shaped loads pass; real SGP.22 provisioning completes one-shot | PASS | README evidence table (5 hardware rows, 2026-10-23); `tests/hardware/validate.sh`, `at_channel_probe.sh`, `examples/loadtest.rs` in tree |
 | v3.4 (fa42259) | No-resend transport semantics + strict CSIM framing | software criteria: mock-modem battery green (no-resend invariants, classification, framing) | PASS | `tests/mock_at.rs` 15/15 |
 | v3.4 | (same version) hardware criteria: post-v3.4 behavior re-validated on the RG502Q bench | **BLOCKED** | Hardware lane owns the modem; no post-v3.4 hardware round exists yet. Not a code defect — software evidence above is green. Owner: hardware lane. |
-| v3.4.1 (2d50e52) | APDU log security | logging off by default; 0600 creation; symlink refusal; hex only under `IFD_MODEMIFD_LOG_APDU` | PASS | `tests/logging.rs`, `tests/logging_enabled.rs` 2/2 |
+| v3.4.1 (2d50e52) | APDU log security | logging off by default; 0600 creation; symlink refusal; hex only under `IFD_MODEMIFD_LOG_APDU` | PASS | `tests/logging.rs`, `tests/logging_enabled.rs` 2/2. (As-shipped evidence gap: no test exercised symlink refusal — caught by the post-merge Codex audit, closed in v3.4.2 below.) |
+| v3.4.2 (post-merge Codex audit of PR #2) | Log-open hardening | symlink refusal enforced atomically at open (`O_NOFOLLOW`), closing the check-to-open race; existing looser-permission logs (pre-v3.4.1 `0644`) tightened to `0600` on open via the fd | PASS | `tests/logging_symlink.rs` (planted-symlink refusal), `tests/logging_repair.rs` (0644→0600, RED→GREEN) |
 
 ## Open items (SKIP / BLOCKED registry — recorded gaps, not promises)
 
@@ -71,7 +72,7 @@ dedicated unit test exists for the ABI itself).
 
 ## Using this gate
 
-1. Regenerate software evidence: `cargo build --release && cargo test --release` — expect 17/17 (15 mock_at + 2 logging).
+1. Regenerate software evidence: `cargo build --release && cargo test --release` — expect 19/19 (15 mock_at + 4 logging).
 2. Hardware criteria: only the hardware lane executes them; a new run
    supersedes the recorded one only when its report lands (stamped,
    persistent — never green-by-default).
