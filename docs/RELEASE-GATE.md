@@ -54,7 +54,7 @@ dedicated unit test exists for the ABI itself).
 |---|---|---|---|---|
 | v3.2 (f0e71a) | LP64 ABI correctness + session hardening | pcscd transmit arguments land in the correct registers (by-value `SCARD_IO_HEADER`, 16 bytes / two registers); no zero-blob responses | PASS | Standing: every later hardware run (v3.3 soak onward) passes through `IFDHTransmitToICC`; ABI documented in `src/lib.rs`. Dedicated-test gap CLOSED 2026-10-24: pcscd-level ABI smoke (SELECT MF → SW 9000 through genuine pcscd, private instance + mock modems) — PR #21 (de3fbcd), `tests/software/pcsc_conformance.sh` GREEN 0/10. |
 | v3.3 (03848b3) | pySim-shell fully usable against the modem reader | full-card filesystem soak survives end-to-end | PASS | pySim-shell soak PASS exit 0 (hardware, recorded 2026-10-23; README evidence table) |
-| v4.0 (3a475eb, = origin/master) | Hardware validation gate + production-proven | phased `validate.sh` gate exists and its recorded run is green; sustained + BPP-shaped loads pass; real SGP.22 provisioning completes one-shot | PASS | README evidence table (5 hardware rows, 2026-10-23); `tests/hardware/validate.sh`, `at_channel_probe.sh`, `examples/loadtest.rs` in tree |
+| v4.0 (3a475eb) | Hardware validation gate + production-proven | phased `validate.sh` gate exists and its recorded run is green; sustained + BPP-shaped loads pass; real SGP.22 provisioning completes one-shot | PASS | README evidence table (5 hardware rows, 2026-10-23); `tests/hardware/validate.sh`, `at_channel_probe.sh`, `examples/loadtest.rs` in tree |
 | v3.4 (fa42259) | No-resend transport semantics + strict CSIM framing | software criteria: mock-modem battery green (no-resend invariants, classification, framing) | PASS | `tests/mock_at.rs` 15/15 |
 | v3.4 | (same version) hardware criteria: post-v3.4 behavior re-validated on the RG502Q bench | **BLOCKED** | Hardware lane owns the modem; no post-v3.4 hardware round exists yet. Not a code defect — software evidence above is green. Owner: hardware lane. |
 | v3.4.1 (2d50e52) | APDU log security | logging off by default; 0600 creation; symlink refusal; hex only under `IFD_MODEMIFD_LOG_APDU` | PASS | `tests/logging.rs`, `tests/logging_enabled.rs` 2/2. (As-shipped evidence gap: no test exercised symlink refusal — caught by the post-merge Codex audit, closed in v3.4.2 below.) |
@@ -71,6 +71,16 @@ dedicated unit test exists for the ABI itself).
 | IFDHandler conformance sweep (IFDHControl/GET_FEATURE_REQUEST, GetCapabilities coverage) | PASS (software, 2026-10-24) | PR #11: zero-feature GET_FEATURE + IFD_ERROR_NOT_SUPPORTED elsewhere, GetCapabilities/PowerICC buffer contracts, LUN registry — `tests/mock_at.rs` 25/25, RED→GREEN. PR #21: same surface end-to-end through pcscd (GET_FEATURE Ok 0 bytes, escape → UnsupportedFeature, fake ATR exact, warm-reset stable, TX_GAP env honored) — GREEN 0/10. Gated the next version cut, not past ones | Conformance lane |
 | CGLA/CCHO/CCHC logical-channel fallback | SKIP | Design captured (issue #10): capability-routed at session init, never per-APDU retry (v3.4 no-resend doctrine). Not a criterion of v3.2–v3.4.2 | Conformance lane |
 | Live NR7101 conformance round (software battery against the real bridge + validate.sh) | BLOCKED | Hardware lane owns the modem; w19:p4 tollgate active on the router's modem-data WAN. Software half pre-run GREEN via PR #21; only DEVICENAME changes for the live round | Hardware lane |
+
+## Version numbering — reconciliation (2026-10-24)
+
+The hardening series landed 2026-10-24 was mis-numbered v3.4→v3.5.2
+even though it sits chronologically ON TOP of v4.0. The line is
+consolidated as **v4.1 (8d9a2a9, git tag v4.1)**: v4.0 semantics +
+no-resend transport, strict CSIM framing, ssh:// exec transport with
+the hardware-proven relay (flock, baud/VMIN pins, self-reap, PDEATHSIG
+kill-chain), sacrificial/esimgate suites, pcsc-lite-2.x lane isolation.
+The v3.4…v3.5.2 commit labels remain in history as-is (no rewrites).
 
 ## Using this gate
 
