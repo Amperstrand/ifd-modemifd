@@ -10,6 +10,10 @@ repository = "https://github.com/Amperstrand/ifd-modemifd"
 name = "ifd_modemifd"
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "modem-vpicc"
+path = "src/bin/modem-vpicc.rs"
+
 [dependencies]
 libc = "0.2"
 

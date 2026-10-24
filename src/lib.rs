@@ -2,6 +2,7 @@
 //! PC/SC reader. Transport: TCP bridge (socat) to the modem AT port.
 //! See README for setup, caveats and the stabilization roadmap.
 
+pub mod agent;
 pub mod at;
 /// ifdhandler.h mirror — public: the host-side test battery (and
 /// embedders building custom harnesses) consume the same ABI constants
@@ -9,6 +10,7 @@ pub mod at;
 pub mod consts;
 pub mod reader;
 pub mod transport;
+pub mod vpcd;
 
 use consts::*;
 use reader::Reader;
