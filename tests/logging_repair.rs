@@ -9,7 +9,10 @@ use ifd_modemifd::log;
 #[test]
 fn legacy_world_readable_log_is_tightened_to_0600() {
     let mut p = std::env::temp_dir();
-    p.push(format!("ifd-modemifd-test-repair-{}.log", std::process::id()));
+    p.push(format!(
+        "ifd-modemifd-test-repair-{}.log",
+        std::process::id()
+    ));
     let path = p.to_str().expect("utf8 tmp path").to_string();
     std::env::set_var("IFD_MODMIFD_LOG_PATH", &path);
     std::env::set_var("IFD_MODMIFD_DEBUG", "1");
@@ -29,7 +32,11 @@ fn legacy_world_readable_log_is_tightened_to_0600() {
             .expect("log exists")
             .permissions()
             .mode();
-        assert_eq!(mode & 0o777, 0o600, "legacy 0644 log must be tightened to 0600 on open");
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "legacy 0644 log must be tightened to 0600 on open"
+        );
     }
     let content = std::fs::read_to_string(&path).expect("read");
     assert!(content.contains("line-after-upgrade"));

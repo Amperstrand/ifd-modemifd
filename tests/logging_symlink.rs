@@ -14,7 +14,10 @@ fn symlinked_log_path_is_refused() {
     p.push(format!("ifd-modemifd-test-link-{}.log", std::process::id()));
     let path = p.to_str().expect("utf8 tmp path").to_string();
     let mut c = std::env::temp_dir();
-    c.push(format!("ifd-modemifd-test-canary-{}.txt", std::process::id()));
+    c.push(format!(
+        "ifd-modemifd-test-canary-{}.txt",
+        std::process::id()
+    ));
     let canary = c.to_str().expect("utf8 tmp path").to_string();
     std::fs::write(&canary, "canary\n").expect("seed canary");
     std::os::unix::fs::symlink(&canary, &path).expect("plant symlink");
