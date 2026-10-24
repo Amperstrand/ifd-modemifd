@@ -1,8 +1,8 @@
 #!/bin/sh
 # at_channel_probe.sh — modem-side logical-channel capability + reliability probe.
 # Runs ON the router (POSIX sh) against the modem AT port directly.
-# The caller (validate.sh) MUST stop pcscd first: pcscd's presence poller
-# writes to the same tty through the socat bridge and contaminates results.
+# The caller MUST ensure tty exclusivity: run while the private pcscd lane
+# (lane-runner.sh) is down — see tests/hardware/README.md doctrine.
 #
 # Usage: at_channel_probe.sh [tty] [cycles]
 #
@@ -35,7 +35,7 @@ at_once 'AT+CGLA=?' 3; echo "$RESP" | head -3
 echo "=== $N x (CCHO -> CGLA SELECT MF -> CCHC) cycles ==="
 ok=0; fail=0
 i=0
-while [ $i -lt $N ]; do
+while [ "$i" -lt "$N" ]; do
   i=$((i+1))
   at_once "AT+CCHO=\"$ISDR\"" 5
   ch=$(echo "$RESP" | grep -o '+CCHO: *[0-9]*' | grep -o '[0-9]*$')
