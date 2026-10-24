@@ -112,20 +112,29 @@ pub fn parse_ssh_target(rest: &str) -> Option<SshTarget> {
     })
 }
 
-/// The remote relay, busybox-ash safe: take an exclusive flock FIRST
-/// (two relays on one modem tty byte-eat each other — observed live
-/// 2026-10-24; belt-and-braces alongside the bench `modem-lane` lock),
-/// then put the tty in raw no-echo mode (tty echo would corrupt the
-/// ATE1 echo-correlation; the modem's own echo is the one the driver
-/// matches), then bridge the ssh channel to the tty with two cats
-/// sharing one read-write fd. flock is required, not optional: a
-/// missing applet fails the transport loudly instead of silently
-/// racing.
+/// The remote relay, busybox-ash safe: take an exclusive flock on the
+/// modem tty (multiple concurrent readers on this router byte-steal each
+/// other silently — observed live as phantom transport failures), pin
+/// the modem baud (a bare `raw` re-asserts the tty's stored default —
+/// 9600 on some routers, which silences a 115200 modem), raw no-echo
+/// with an explicit VMIN=1/VTIME=0 (this Zyxel build's stty warns
+/// "unable to perform all requested operations" and leaves the tty at
+/// VMIN=0/VTIME=0, where every read returns instant EOF and the relay
+/// cats exit immediately), then bridge the ssh channel to the tty with
+/// two cats sharing one read-write fd. The shell stays resident (no
+/// exec past the cats): when the ssh side dies, the writer cat sees
+/// stdin EOF, exits, and the shell kills the reader — the relay
+/// self-reaps and releases the flock, so a dropped link cannot leak
+/// byte-stealing relay processes onto the modem tty (the leak class
+/// that corrupted an entire evening of transport verification).
+const MODEM_BAUD: &str = "115200";
+
 fn remote_relay_script(tty: &str) -> String {
+    let lock = format!("/var/lock/LCK..{}", tty.trim_start_matches('/').replace('/', "_"));
     format!(
-        "exec 9>/var/lock/modem-ifd.lock; flock 9 || exit 70; \
-         stty -F {tty} raw -echo 2>/dev/null || stty raw -echo <{tty}; \
-         exec 3<>{tty}; cat <&3 & exec cat >&3"
+        "flock -x {lock} sh -c 'stty -F {tty} {MODEM_BAUD} raw -echo min 1 time 0 2>/dev/null \
+         || stty {MODEM_BAUD} raw -echo min 1 time 0 <{tty}; \
+         exec 3<>{tty}; cat <&3 & R=$!; cat >&3; kill $R'"
     )
 }
 

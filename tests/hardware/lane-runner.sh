@@ -80,7 +80,16 @@ teardown() {
         kill "$SA_PID" 2>/dev/null || true
         SA_PID=""
     fi
+    pkill -f "systemd-socket-activate -l $LANE_SOCK" 2>/dev/null || true
+    pkill -f "pcscd --foreground -c $LANE_CONF_DIR" 2>/dev/null || true
     rm -f "$LANE_SOCK" 2>/dev/null || true
+    if [ -n "${BEAT_PID:-}" ]; then
+        kill "$BEAT_PID" 2>/dev/null || true
+        BEAT_PID=""
+    fi
+    if [ -n "${LANE_SSH:-}" ] && [ "${MODEM_LANE_SKIP:-0}" != "1" ]; then
+        timeout 15 ssh -o BatchMode=yes "$LANE_SSH" "modem-lane release $LANE_OWNER" 2>/dev/null || true
+    fi
 }
 # shellcheck disable=SC2317  # invoked only via trap
 trap teardown EXIT INT TERM
@@ -188,18 +197,76 @@ fi
 
 hw_preflight
 say "lane-runner: hardware mode — private pcscd lane '$LANE'"
+
+# Cross-lane modem mutex (protocol agreed 2026-10-24; helper on the
+# router, source of truth conwrt-bench tools/modem-lane.sh). Every modem
+# op — AT ports, CSIM, pcscd lanes, CFUN/QUIMSLOT — must hold it; bare
+# readers byte-steal each other otherwise (tonight's live lesson).
+LANE_OWNER="${LANE_OWNER:-modem-hil}"
+LANE_SSH=""
+case "$MODEMIFD_ADDR" in
+    ssh://*) LANE_SSH="${MODEMIFD_ADDR#ssh://}"; LANE_SSH="${LANE_SSH%%/*}" ;;
+esac
+if [ "${MODEM_LANE_SKIP:-0}" != "1" ]; then
+    if [ -z "$LANE_SSH" ]; then
+        echo "lane-runner.sh: cannot derive router host from MODEMIFD_ADDR for the modem-lane lock." >&2
+        echo "  Set MODEM_LANE_HOST (router ssh host) or MODEM_LANE_SKIP=1 to proceed unguarded." >&2
+        exit 3
+    fi
+    if ! timeout 15 ssh -o BatchMode=yes "$LANE_SSH" "modem-lane take $LANE_OWNER 'ifd-modemifd lane: $SUITE suite, pid $$'" 2>&1; then
+        echo "lane-runner.sh: modem-lane lock refused — another lane holds the modem." >&2
+        exit 3
+    fi
+    BEAT_PID=""
+    (while :; do sleep 60; timeout 15 ssh -o BatchMode=yes "$LANE_SSH" "modem-lane heartbeat $LANE_OWNER" 2>/dev/null; done) &
+    BEAT_PID=$!
+fi
+
 printf 'FRIENDLYNAME %s\nDEVICENAME %s\nLIBPATH %s\nCHANNELID 1\n' \
     "$FRIENDLYNAME" "$MODEMIFD_ADDR" "$SO_FILE" > "$LANE_CONF_DIR/modemifd.conf" || exit 3
 
-"$SA_BIN" -l "$LANE_SOCK" -- "$PCSCD_BIN" --foreground -c "$LANE_CONF_DIR" &
-SA_PID=$!
+# pcsc-lite >= 2.0 refuses to start when the SYSTEM /run/pcscd/pcscd.comm
+# exists with a live pid (second-instance check runs before socket
+# activation), so the AGENTS.md plain recipe dies on 2.x hosts. Isolate the
+# instance in a private mount namespace with a tmpfs over /run/pcscd; the
+# lane socket still lives in the real fs for clients.
+# systemd-socket-activate STRIPS the environment for the activated service,
+# so driver tuning (IFD_MODMIFD_*: debug log, ssh key/cmd, TX gap) must be
+# re-injected explicitly via an env(1) wrapper around pcscd.
+PCSC_MAJOR=$("$PCSCD_BIN" --version 2>/dev/null | sed -n 's/^pcsc-lite version \([0-9]*\)\..*/\1/p')
+PCSC_ENV_CMD=""
+for v in IFD_MODMIFD_DEBUG IFD_MODMIFD_LOG_PATH IFD_MODMIFD_LOG_APDU \
+         IFD_MODMIFD_SSH_KEY IFD_MODMIFD_SSH_CMD IFD_MODMIFD_TX_GAP_MS; do
+    eval "val=\${$v:-}"
+    [ -n "$val" ] && PCSC_ENV_CMD="$PCSC_ENV_CMD $v='$val'"
+done
+[ -n "$PCSC_ENV_CMD" ] && PCSC_ENV_CMD="env$PCSC_ENV_CMD"
+
+PCSC_LAUNCH="$PCSC_ENV_CMD '$PCSCD_BIN' --foreground -c '$LANE_CONF_DIR'"
+if [ "${PCSC_MAJOR:-0}" -ge 2 ]; then
+    echo "lane-runner: pcsc-lite $PCSC_MAJOR.x detected — namespace-isolated instance"
+    unshare -m sh -c "mount -t tmpfs tmpfs /run/pcscd && exec '$SA_BIN' -l '$LANE_SOCK' \
+-- sh -c \"exec $PCSC_LAUNCH\"" &
+    SA_PID=$!
+else
+    "$SA_BIN" -l "$LANE_SOCK" -- sh -c "exec $PCSC_LAUNCH" &
+    SA_PID=$!
+fi
 export PCSCLITE_CSOCK_NAME="$LANE_SOCK"
+
+i=0
+while [ ! -S "$LANE_SOCK" ]; do
+    i=$((i + 1))
+    [ "$i" -ge 40 ] && break
+    sleep 0.25
+done
+chmod 666 "$LANE_SOCK" 2>/dev/null
 
 say "waiting for reader '$FRIENDLYNAME' (by name, never first)"
 i=0
-until python3 "$HERE/suite.py" --list-readers 2>/dev/null | grep -Fxq "$FRIENDLYNAME"; do
+until python3 "$HERE/suite.py" --list-readers 2>/dev/null | grep -q "^$FRIENDLYNAME"; do
     i=$((i + 1))
-    if [ "$i" -ge 30 ]; then
+    if [ "$i" -ge 60 ]; then
         echo "lane-runner.sh: reader '$FRIENDLYNAME' never appeared on the private lane" >&2
         exit 3
     fi

@@ -261,22 +261,28 @@ def match_reader(available: list[str], wanted: str) -> str:
 
 
 class PcscBackend:
-    def __init__(self, reader: str) -> None:
+    def __init__(self, reader: str, card_wait_s: float = 20.0) -> None:
         self.reader_name = match_reader(pcsc_list_readers(), reader)
         self.lib = load_pcsc()
         self.h = ctypes.c_ulong()
         self.card = ctypes.c_ulong()
         self.proto = ctypes.c_ulong()
+        self.card_wait_s = card_wait_s
 
     def connect(self) -> None:
         rc = self.lib.SCardEstablishContext(SCARD_SCOPE_USER, None, None, ctypes.byref(self.h))
         if rc:
             raise SuiteError(f"SCardEstablishContext: {pcsc_error_name(rc)}")
-        rc = self.lib.SCardConnect(
-            self.h, self.reader_name.encode(), SCARD_SHARE_SHARED, SCARD_PROTOCOL_ANY,
-            ctypes.byref(self.card), ctypes.byref(self.proto))
-        if rc:
-            raise SuiteError(f"SCardConnect({self.reader_name}): {pcsc_error_name(rc)}")
+        deadline = time.monotonic() + self.card_wait_s
+        while True:
+            rc = self.lib.SCardConnect(
+                self.h, self.reader_name.encode(), SCARD_SHARE_SHARED, SCARD_PROTOCOL_ANY,
+                ctypes.byref(self.card), ctypes.byref(self.proto))
+            if rc == 0:
+                return
+            if rc != 0x8010000C or time.monotonic() > deadline:
+                raise SuiteError(f"SCardConnect({self.reader_name}): {pcsc_error_name(rc)}")
+            time.sleep(0.5)
 
     def close(self) -> None:
         if self.card.value:
@@ -558,7 +564,7 @@ def run_suite(suite: str, args) -> int:
             if args.backend == "direct":
                 backend = DirectBackend(args.endpoint, args.timeout_ms)
             else:
-                backend = PcscBackend(args.reader)
+                backend = PcscBackend(args.reader, args.card_wait_s)
                 print(f"reader: {backend.reader_name}", file=sys.stderr)
             try:
                 backend.connect()
@@ -796,6 +802,8 @@ def main() -> int:
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--lpac-repeats", type=int, default=3)
     ap.add_argument("--timeout-ms", type=int, default=3000)
+    ap.add_argument("--card-wait-s", type=float, default=20.0,
+                    help="pcsc: wait for card presence on a freshly added reader")
     ap.add_argument("--results", default=None, help="JSONL output file (default stdout)")
     ap.add_argument("--block-all", default=None,
                     help="emit every case BLOCKED with this reason; no execution")

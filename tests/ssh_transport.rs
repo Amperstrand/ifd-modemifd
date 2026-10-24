@@ -58,10 +58,10 @@ fn ssh_command_shape() {
         "-o ServerAliveInterval=10",
         "root@192.168.1.1",
         "--",
-        "flock 9 || exit 70",
-        "stty -F /dev/ttyUSB2 raw -echo",
+        "flock -x /var/lock/LCK..dev_ttyUSB2",
+        "stty -F /dev/ttyUSB2 115200 raw -echo min 1 time 0",
         "exec 3<>/dev/ttyUSB2",
-        "exec cat >&3",
+        "kill $R",
     ] {
         assert!(joined.contains(must), "missing `{must}` in `{joined}`");
     }
