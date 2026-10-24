@@ -22,17 +22,37 @@ fn readers() -> &'static Readers {
     R.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Debug log: opt-in via IFD_MODMIFD_DEBUG, created 0600, never through
+/// a symlink (fixed /tmp path — a pre-planted link would redirect an
+/// append into arbitrary files). APDU CONTENT is additionally gated
+/// behind IFD_MODEMIFD_LOG_APDU (see reader.rs): authentication and
+/// provisioning payloads must not land on disk by default.
+fn debug_log_path() -> String {
+    std::env::var("IFD_MODMIFD_LOG_PATH").unwrap_or_else(|_| "/tmp/ifd-modemifd.log".to_string())
+}
+
+fn open_debug_log() -> Option<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let path = debug_log_path();
+    if std::fs::symlink_metadata(&path)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        return None;
+    }
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .open(&path)
+        .ok()
+}
+
 fn log_file() -> Option<&'static Mutex<Option<std::fs::File>>> {
     static L: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
     Some(L.get_or_init(|| {
-        if true || std::env::var("IFD_MODMIFD_DEBUG").is_ok() {
-            Mutex::new(
-                OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open("/tmp/ifd-modemifd.log")
-                    .ok(),
-            )
+        if std::env::var("IFD_MODMIFD_DEBUG").is_ok() {
+            Mutex::new(open_debug_log())
         } else {
             Mutex::new(None)
         }

@@ -63,11 +63,14 @@ pub enum AtOutcome {
 }
 
 fn append_log(msg: &str) {
-    use std::fs::OpenOptions;
-    use std::io::Write;
-    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/tmp/ifd-modemifd-reader.log") {
-        let _ = writeln!(f, "{}", msg);
-    }
+    crate::log(msg);
+}
+
+/// APDU payloads are authentication/provisioning secrets: their hex is
+/// logged only under IFD_MODEMIFD_LOG_APDU; the default records lengths.
+fn log_apdu_content() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("IFD_MODEMIFD_LOG_APDU").is_ok())
 }
 
 impl Reader {
@@ -252,7 +255,11 @@ impl Reader {
         }
         let hex = at::bin2hex(apdu);
         let cmd = format!("AT+CSIM={},\"{}\"", apdu.len() * 2, hex);
-        append_log(&format!("XMIT {}", hex));
+        if log_apdu_content() {
+            append_log(&format!("XMIT {}", hex));
+        } else {
+            append_log(&format!("XMIT len={}", apdu.len()));
+        }
         match self.at_expect(&cmd, "+CSIM:", total) {
             AtOutcome::Ok(resp) => {
                 let parsed = at::parse_csim_in(&resp, &cmd);
