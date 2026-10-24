@@ -40,12 +40,33 @@ fn open_debug_log() -> Option<std::fs::File> {
     {
         return None;
     }
-    std::fs::OpenOptions::new()
+    // O_NOFOLLOW closes the check-to-open race (a link planted between
+    // the pre-check above and the open) on arches sharing the generic
+    // Linux flag value; elsewhere the pre-check remains the guard.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64"))]
+    let mut open_opts = {
+        const O_NOFOLLOW: i32 = 0o400000;
+        let mut o = std::fs::OpenOptions::new();
+        o.custom_flags(O_NOFOLLOW);
+        o
+    };
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64")))]
+    let mut open_opts = std::fs::OpenOptions::new();
+    let f = open_opts
         .create(true)
         .append(true)
         .mode(0o600)
         .open(&path)
-        .ok()
+        .ok()?;
+    // `.mode()` only applies at creation: tighten files left looser by
+    // earlier binaries (the pre-v3.4.1 0644 log) via the fd — fchmod,
+    // race-free, never touching a different inode than we opened.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+    }
+    Some(f)
 }
 
 fn log_file() -> Option<&'static Mutex<Option<std::fs::File>>> {
