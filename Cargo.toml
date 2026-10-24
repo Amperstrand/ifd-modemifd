@@ -6,6 +6,10 @@ license = "LGPL-2.1-or-later"
 description = "pcscd IFD handler exposing a cellular modem SIM slot (AT+CSIM over TCP/serial) as a PC/SC reader"
 repository = "https://github.com/Amperstrand/ifd-modemifd"
 
+[workspace]
+members = ["agent"]
+resolver = "2"
+
 [lib]
 name = "ifd_modemifd"
 crate-type = ["cdylib", "rlib"]
