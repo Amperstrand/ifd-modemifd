@@ -16,6 +16,12 @@ use std::time::Duration;
 /// bytes; anything past frame+chunk means a hostile or desynced peer.
 const STREAM_CAP: usize = 1 << 20;
 
+/// Every APDU must be answered within the vpcd driver's 2 s receive
+/// window (libifdvpcd-amperstrand VPCD_RECV_TIMEOUT_SEC); a slower
+/// answer returns empty to the host and ejects the VICC. 1.5 s keeps
+/// ~4x margin over the modem's 400 ms p50 while landing inside it.
+const APDU_TIMEOUT: Duration = Duration::from_millis(1500);
+
 pub struct AgentConfig {
     pub vpcd_addr: String,
     pub target: String,
@@ -80,7 +86,7 @@ fn handle_frame(
             Ok(())
         }
         Frame::Apdu(capdu) => {
-            let rapdu = match reader.transmit(&capdu) {
+            let rapdu = match reader.transmit_with_timeout(&capdu, APDU_TIMEOUT) {
                 Ok(r) => r,
                 Err(()) => {
                     // vpcd has no transport-error frame; refused/drop map
