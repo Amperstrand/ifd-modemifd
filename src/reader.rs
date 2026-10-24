@@ -73,6 +73,21 @@ fn log_apdu_content() -> bool {
     *V.get_or_init(|| std::env::var("IFD_MODEMIFD_LOG_APDU").is_ok())
 }
 
+/// Inter-command pacing floor. Default `TRANSMIT_GAP_MS`; override per
+/// pcscd process via `IFD_MODMIFD_TX_GAP_MS=<ms>` (unparsable values
+/// fall back to the default; `0` disables pacing entirely — see the
+/// README's CSIM-thrash caveat before disabling). Cached once: the env
+/// var must be set before the first paced transmit.
+fn transmit_gap() -> Duration {
+    static G: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    Duration::from_millis(*G.get_or_init(|| {
+        std::env::var("IFD_MODMIFD_TX_GAP_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(TRANSMIT_GAP_MS)
+    }))
+}
+
 impl Reader {
     pub fn new(target: &str) -> Reader {
         Reader {
@@ -122,7 +137,7 @@ impl Reader {
         if pace {
             let mut lc = self.last_cmd.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(t) = *lc {
-                let wait = Duration::from_millis(TRANSMIT_GAP_MS).saturating_sub(t.elapsed());
+                let wait = transmit_gap().saturating_sub(t.elapsed());
                 if !wait.is_zero() {
                     std::thread::sleep(wait);
                 }

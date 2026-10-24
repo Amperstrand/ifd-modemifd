@@ -60,6 +60,10 @@ to anyone driving this modem family as a smartcard reader:
   this floor, the v4.0 hardware validation measured **p50 400 ms
   round-trips** (SELECT MF ×300 and 100-byte STORE DATA ×150, zero
   failures) — the pacing gap dominates the modem's own response time.
+  Tunable per pcscd process: `IFD_MODMIFD_TX_GAP_MS=<ms>` (default 400;
+  unparsable values fall back to the default; read once at the first
+  paced transmit). `0` disables pacing — do not disable on thrash-prone
+  firmware except for testing.
 - **The AT port shuffles across resets** (ttyUSB0-3): never hardcode it.
   The reference socat bridge init script auto-detects at start.
 
@@ -141,6 +145,7 @@ redirected the append into arbitrary files.
 | `IFD_MODMIFD_DEBUG` | master gate: any value enables the log; unset, no log file is ever opened. (Spelling is `MODMIFD` — no second `E` — matching the code.) |
 | `IFD_MODEMIFD_LOG_APDU` | additionally logs APDU payload hex; without it, transmits are recorded as lengths only (`XMIT len=N`). (This one IS `MODEMIFD`.) |
 | `IFD_MODMIFD_LOG_PATH` | log path override (default `/tmp/ifd-modemifd.log`), e.g. for bench isolation. |
+| `IFD_MODMIFD_TX_GAP_MS` | inter-command pacing floor in ms (default 400; see CSIM pacing above). `0` disables — testing only. Read once at the first paced transmit. |
 
 File behavior: created `0600`, append-only; an existing log file with
 looser permissions (e.g. the pre-v3.4.1 world-readable `0644` log) is
@@ -169,8 +174,6 @@ same OnceLock cache.
   from the URC-flood state itself is idle/CFUN cycle. (No aliasing
   observed under paced operation, including the full provisioning run.)
 - Serial transport (`/dev/ttyUSBx` direct) not yet implemented (TCP only).
-- Pacing is a compile-time constant (400 ms; see CSIM pacing above); not
-  yet runtime-configurable.
 - Multi-reader LUN registry: create-by-name / remove / cross-reader
   isolation are covered by mock-modem tests (`tests/mock_at.rs`); not
   yet exercised against two physical modems.
