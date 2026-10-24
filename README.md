@@ -169,7 +169,11 @@ same OnceLock cache.
   from the URC-flood state itself is idle/CFUN cycle. (No aliasing
   observed under paced operation, including the full provisioning run.)
 - Serial transport (`/dev/ttyUSBx` direct) not yet implemented (TCP only).
-- Multi-reader LUN registry present but untested beyond one reader.
+- Pacing is a compile-time constant (400 ms; see CSIM pacing above); not
+  yet runtime-configurable.
+- Multi-reader LUN registry: create-by-name / remove / cross-reader
+  isolation are covered by mock-modem tests (`tests/mock_at.rs`); not
+  yet exercised against two physical modems.
 
 ## Build & install
 
