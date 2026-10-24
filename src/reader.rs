@@ -1,5 +1,6 @@
-//! One Reader = one modem (one PC/SC slot). Transport: TCP to a bridge
-//! (socat) on the modem host.
+//! One Reader = one modem (one PC/SC slot). Transport: TCP bridge
+//! (legacy, `host:port`) or encrypted SSH exec (`ssh://…/dev/ttyX`) —
+//! see src/transport.rs.
 //!
 //! Protocol findings baked in (conwrt-bench #21/#22, RG502Q-EA):
 //! - ATE1 echo-correlation: the echo of our command marks the boundary
@@ -15,8 +16,8 @@
 //! retried, exactly once.
 
 use crate::at;
+use crate::transport::{self, ModemLink};
 use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -31,7 +32,7 @@ const READ_CAP: usize = 8192;
 pub struct Reader {
     pub target: String,
     last_cmd: Mutex<Option<Instant>>,
-    stream: Mutex<Option<TcpStream>>,
+    stream: Mutex<Option<Box<dyn ModemLink>>>,
     presence_ts: Mutex<Option<Instant>>,
     present: Mutex<Option<bool>>,
 }
@@ -99,29 +100,17 @@ impl Reader {
         }
     }
 
-    fn connect(&self) -> Option<TcpStream> {
-        let (host, port) = self.target.rsplit_once(':')?;
-        let port: u16 = port.parse().ok()?;
-        let mut last_err = None;
-        for addr in std::net::ToSocketAddrs::to_socket_addrs(&(host, port)).ok()? {
-            match TcpStream::connect_timeout(&addr, Duration::from_secs(3)) {
-                Ok(s) => {
-                    let _ = s.set_nodelay(true);
-                    return Some(s);
-                }
-                Err(e) => last_err = Some(e),
-            }
-        }
-        append_log(&format!("connect {} failed: {:?}", self.target, last_err));
-        None
-    }
-
-    fn stream_slot(&self) -> std::sync::MutexGuard<'_, Option<TcpStream>> {
+    fn stream_slot(&self) -> std::sync::MutexGuard<'_, Option<Box<dyn ModemLink>>> {
         self.stream.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// drain + optional pacing + write. Caller holds the stream guard.
-    fn prime_and_send(&self, stream: &mut TcpStream, cmd: &str, pace: bool) -> Result<(), ()> {
+    fn prime_and_send(
+        &self,
+        stream: &mut Box<dyn ModemLink>,
+        cmd: &str,
+        pace: bool,
+    ) -> Result<(), ()> {
         let _ = stream.set_nonblocking(true);
         let mut sink = [0u8; 2048];
         let deadline = Instant::now() + Duration::from_millis(120);
@@ -158,7 +147,7 @@ impl Reader {
     fn at_full(&self, cmd: &str, prefix: &str, total: Duration, pace: bool) -> AtOutcome {
         let mut guard = self.stream_slot();
         if guard.is_none() {
-            *guard = self.connect();
+            *guard = transport::open(&self.target);
         }
         let stream = match guard.as_mut() {
             Some(s) => s,
