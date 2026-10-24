@@ -1,0 +1,11 @@
+[package]
+name = "modem-vpicc"
+version = "0.1.0"
+edition = "2021"
+license = "LGPL-2.1-or-later"
+description = "vpcd agent: plays the smartcard behind a vsmartcard virtual reader, backed by a modem SIM (AT+CSIM)"
+repository = "https://github.com/Amperstrand/ifd-modemifd"
+publish = false
+
+[dependencies]
+ifd-modemifd = { path = ".." }
