@@ -3,14 +3,17 @@
 //! See README for setup, caveats and the stabilization roadmap.
 
 pub mod at;
+/// ifdhandler.h mirror — public: the host-side test battery (and
+/// embedders building custom harnesses) consume the same ABI constants
+/// the exports use.
 pub mod consts;
 pub mod reader;
+pub mod transport;
 
 use consts::*;
 use reader::Reader;
 use std::collections::HashMap;
 use std::ffi::{c_char, c_ulong, CStr};
-use std::fs::OpenOptions;
 use std::io::Write;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -155,7 +158,9 @@ pub unsafe extern "C" fn IFDHCreateChannelByName(
     device_name: *mut c_char,
 ) -> RESPONSECODE {
     guard(|| match cstr(device_name) {
-        Some(t) if t.contains(':') => open_reader(lun, t),
+        // host:port (legacy TCP bridge) or ssh://[user@]host[:port]/dev/ttyX
+        // (encrypted exec transport — see src/transport.rs)
+        Some(t) if t.contains(':') || t.starts_with("ssh://") => open_reader(lun, t),
         _ => IFD_COMMUNICATION_ERROR,
     })
 }
