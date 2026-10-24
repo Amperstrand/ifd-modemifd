@@ -51,7 +51,12 @@ to anyone driving this modem family as a smartcard reader:
   capability probes must not require the `+X:` prefix form.
 - **CSIM pacing is mandatory**: back-to-back AT+CSIM bursts trigger SIM-
   session thrash (URC flood, lagging/swallowed responses). The driver
-  enforces a 250 ms inter-command floor with idle recovery.
+  enforces a **400 ms inter-command floor** (`TRANSMIT_GAP_MS` in
+  `src/reader.rs`) between paced transmits; presence probes (`AT+CPIN?`)
+  are deliberately exempt so pcscd's presence poller stays cheap. Under
+  this floor, the v4.0 hardware validation measured **p50 400 ms
+  round-trips** (SELECT MF ×300 and 100-byte STORE DATA ×150, zero
+  failures) — the pacing gap dominates the modem's own response time.
 - **The AT port shuffles across resets** (ttyUSB0-3): never hardcode it.
   The reference socat bridge init script auto-detects at start.
 
