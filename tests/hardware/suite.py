@@ -168,7 +168,7 @@ class DirectBackend:
                                   "modem ERROR (card-level refusal, driver: 6F00)")
         self._last = time.monotonic()
         if not echo_seen:
-            return ApduResult("error", None, "transport: no echo (ambiguous delivery)")
+            return ApduResult("error", None, "no echo (ambiguous delivery)")
         return ApduResult("refused", bytes.fromhex("6F00"),
                           "echo then silence (modem drop, driver: 6F00)")
 
@@ -560,7 +560,10 @@ def run_suite(suite: str, args) -> int:
             else:
                 backend = PcscBackend(args.reader)
                 print(f"reader: {backend.reader_name}", file=sys.stderr)
-            backend.connect()
+            try:
+                backend.connect()
+            except OSError as e:
+                raise SuiteError(f"backend connect failed: {e}") from e
             for c in cases:
                 if c.lpac:
                     if args.backend != "pcsc":
@@ -610,7 +613,10 @@ def _run_case(emit, c: Case, ctx: Ctx, backend, attempt: int) -> None:
               "duration_ms": 0, "evidence": {}})
         return
     t0 = time.monotonic()
-    result = backend.transmit(apdu)
+    try:
+        result = backend.transmit(apdu)
+    except OSError as e:
+        result = ApduResult("error", None, f"transport died: {e}")
     dur = int((time.monotonic() - t0) * 1000)
     verdict, detail = c.check(ctx, result)
     observed = f"SW {result.sw}" if result.rapdu is not None else f"transport ({result.classification})"
