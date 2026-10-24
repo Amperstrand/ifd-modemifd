@@ -29,9 +29,16 @@ LIB="$TARGET/release/libifd_modemifd.so"
 EX="$TARGET/release/examples"
 
 # --lib first: building only the examples puts the cdylib under
-# release/deps/, not at the release/libifd_modemifd.so path $LIB uses
-cargo build --release --lib >/dev/null
-cargo build --release --example mockmodem --example pcsc_conformance >/dev/null
+# release/deps/, not at the release/libifd_modemifd.so path $LIB uses.
+# Both builds are fatal: a stale artifact must never produce GREEN.
+cargo build --release --lib >/dev/null || {
+    echo "cargo build --lib failed" >&2
+    exit 4
+}
+cargo build --release --example mockmodem --example pcsc_conformance >/dev/null || {
+    echo "cargo build --examples failed" >&2
+    exit 4
+}
 
 WORK=$(mktemp -d /tmp/modemifd-pcsc-round.XXXXXX)
 MOCK_PIDS=""
@@ -87,7 +94,13 @@ EOF
 # appears late in startup, and a leaked namespaced pcscd holds the
 # session's pipes open forever.
 INNER='
-    mount -t tmpfs tmpfs /run/pcscd
+    # The tmpfs is the isolation boundary for the pcscd socket; without
+    # it the daemon would bind the HOST /run/pcscd — abort instead.
+    mkdir -p /run/pcscd
+    if ! mount -t tmpfs tmpfs /run/pcscd; then
+        echo "FAIL ns_mount — tmpfs over /run/pcscd failed" >&2
+        exit 5
+    fi
     IFD_MODMIFD_TX_GAP_MS=60 \
     IFD_MODMIFD_DEBUG=1 \
     IFD_MODMIFD_LOG_PATH="$1/driver.log" \
