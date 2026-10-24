@@ -28,6 +28,9 @@ TARGET=$(cargo metadata --no-deps --format-version 1 \
 LIB="$TARGET/release/libifd_modemifd.so"
 EX="$TARGET/release/examples"
 
+# --lib first: building only the examples puts the cdylib under
+# release/deps/, not at the release/libifd_modemifd.so path $LIB uses
+cargo build --release --lib >/dev/null
 cargo build --release --example mockmodem --example pcsc_conformance >/dev/null
 
 WORK=$(mktemp -d /tmp/modemifd-pcsc-round.XXXXXX)
