@@ -58,7 +58,7 @@ fn ssh_command_shape() {
         "-o ServerAliveInterval=10",
         "root@192.168.1.1",
         "--",
-        "stty -F /dev/ttyUSB2 115200 raw -echo",
+        "stty -F /dev/ttyUSB2 115200 raw -echo min 1 time 0",
         "exec 3<>/dev/ttyUSB2",
         "exec cat >&3",
     ] {
