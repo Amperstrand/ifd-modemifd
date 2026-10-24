@@ -130,7 +130,10 @@ pub fn parse_ssh_target(rest: &str) -> Option<SshTarget> {
 const MODEM_BAUD: &str = "115200";
 
 fn remote_relay_script(tty: &str) -> String {
-    let lock = format!("/var/lock/LCK..{}", tty.trim_start_matches('/').replace('/', "_"));
+    let lock = format!(
+        "/var/lock/LCK..{}",
+        tty.trim_start_matches('/').replace('/', "_")
+    );
     format!(
         "flock -x {lock} sh -c 'stty -F {tty} {MODEM_BAUD} raw -echo min 1 time 0 2>/dev/null \
          || stty {MODEM_BAUD} raw -echo min 1 time 0 <{tty}; \
@@ -209,6 +212,22 @@ pub struct SshLink {
 
 impl SshLink {
     pub fn spawn(cmd: &mut Command) -> io::Result<SshLink> {
+        // PDEATHSIG: if the hosting pcscd dies hard (SIGKILL — no Drop),
+        // the kernel kills this ssh child too, closing the channel so
+        // dropbear ends the session and the remote relay releases its
+        // flock. Without it, orphaned ssh trees kept byte-stealing relay
+        // processes alive on the modem tty (bench 2026-10-24, 13 reaped).
+        #[cfg(unix)]
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            cmd.pre_exec(|| {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+
         let mut child = cmd.spawn()?;
         let stdin = child
             .stdin
