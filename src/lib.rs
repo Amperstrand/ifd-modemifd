@@ -43,14 +43,22 @@ fn open_debug_log() -> Option<std::fs::File> {
     // O_NOFOLLOW closes the check-to-open race (a link planted between
     // the pre-check above and the open) on arches sharing the generic
     // Linux flag value; elsewhere the pre-check remains the guard.
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64"))]
+    #[cfg(any(
+        target_arch = "x86_64",
+        target_arch = "aarch64",
+        target_arch = "riscv64"
+    ))]
     let mut open_opts = {
         const O_NOFOLLOW: i32 = 0o400000;
         let mut o = std::fs::OpenOptions::new();
         o.custom_flags(O_NOFOLLOW);
         o
     };
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64")))]
+    #[cfg(not(any(
+        target_arch = "x86_64",
+        target_arch = "aarch64",
+        target_arch = "riscv64"
+    )))]
     let mut open_opts = std::fs::OpenOptions::new();
     let f = open_opts
         .create(true)
@@ -67,7 +75,9 @@ fn open_debug_log() -> Option<std::fs::File> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if f.set_permissions(std::fs::Permissions::from_mode(0o600)).is_err() {
+        if f.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .is_err()
+        {
             return None;
         }
     }
