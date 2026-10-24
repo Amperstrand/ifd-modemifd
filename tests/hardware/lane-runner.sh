@@ -198,14 +198,26 @@ printf 'FRIENDLYNAME %s\nDEVICENAME %s\nLIBPATH %s\nCHANNELID 1\n' \
 # activation), so the AGENTS.md plain recipe dies on 2.x hosts. Isolate the
 # instance in a private mount namespace with a tmpfs over /run/pcscd; the
 # lane socket still lives in the real fs for clients.
+# systemd-socket-activate STRIPS the environment for the activated service,
+# so driver tuning (IFD_MODMIFD_*: debug log, ssh key/cmd, TX gap) must be
+# re-injected explicitly via an env(1) wrapper around pcscd.
 PCSC_MAJOR=$("$PCSCD_BIN" --version 2>/dev/null | sed -n 's/^pcsc-lite version \([0-9]*\)\..*/\1/p')
+PCSC_ENV_CMD=""
+for v in IFD_MODMIFD_DEBUG IFD_MODMIFD_LOG_PATH IFD_MODMIFD_LOG_APDU \
+         IFD_MODMIFD_SSH_KEY IFD_MODMIFD_SSH_CMD IFD_MODMIFD_TX_GAP_MS; do
+    eval "val=\${$v:-}"
+    [ -n "$val" ] && PCSC_ENV_CMD="$PCSC_ENV_CMD $v='$val'"
+done
+[ -n "$PCSC_ENV_CMD" ] && PCSC_ENV_CMD="env$PCSC_ENV_CMD"
+
+PCSC_LAUNCH="$PCSC_ENV_CMD '$PCSCD_BIN' --foreground -c '$LANE_CONF_DIR'"
 if [ "${PCSC_MAJOR:-0}" -ge 2 ]; then
     echo "lane-runner: pcsc-lite $PCSC_MAJOR.x detected — namespace-isolated instance"
     unshare -m sh -c "mount -t tmpfs tmpfs /run/pcscd && exec '$SA_BIN' -l '$LANE_SOCK' \
--- '$PCSCD_BIN' --foreground -c '$LANE_CONF_DIR'" &
+-- sh -c \"exec $PCSC_LAUNCH\"" &
     SA_PID=$!
 else
-    "$SA_BIN" -l "$LANE_SOCK" -- "$PCSCD_BIN" --foreground -c "$LANE_CONF_DIR" &
+    "$SA_BIN" -l "$LANE_SOCK" -- sh -c "exec $PCSC_LAUNCH" &
     SA_PID=$!
 fi
 export PCSCLITE_CSOCK_NAME="$LANE_SOCK"

@@ -112,13 +112,17 @@ pub fn parse_ssh_target(rest: &str) -> Option<SshTarget> {
     })
 }
 
-/// The remote relay, busybox-ash safe: put the tty in raw no-echo mode
-/// (tty echo would corrupt the ATE1 echo-correlation; the modem's own
-/// echo is the one the driver matches), then bridge the ssh channel to
-/// the tty with two cats sharing one read-write fd.
+/// The remote relay, busybox-ash safe: pin the modem baud (a bare `raw`
+/// re-asserts the tty's stored default — 9600 on some routers, which
+/// silences a 115200 modem), raw no-echo (tty echo would corrupt the
+/// ATE1 echo-correlation; the modem's own echo is the one the driver
+/// matches), then bridge the ssh channel to the tty with two cats
+/// sharing one read-write fd.
+const MODEM_BAUD: &str = "115200";
+
 fn remote_relay_script(tty: &str) -> String {
     format!(
-        "stty -F {tty} raw -echo 2>/dev/null || stty raw -echo <{tty}; \
+        "stty -F {tty} {MODEM_BAUD} raw -echo 2>/dev/null || stty {MODEM_BAUD} raw -echo <{tty}; \
          exec 3<>{tty}; cat <&3 & exec cat >&3"
     )
 }
