@@ -55,7 +55,8 @@ pub fn parse_csim_in(resp: &str, echo: &str) -> Option<Vec<u8>> {
 }
 
 fn parse_csim_lines<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<Vec<u8>> {
-    let line = lines.find(|l| l.starts_with("+CSIM:"))?;    let rest = line.strip_prefix("+CSIM:")?.trim_start();
+    let line = lines.find(|l| l.starts_with("+CSIM:"))?;
+    let rest = line.strip_prefix("+CSIM:")?.trim_start();
     let (lenstr, quoted) = rest.split_once(',')?;
     let declared: usize = lenstr.trim().parse().ok()?;
     let q1 = quoted.find('"')?;

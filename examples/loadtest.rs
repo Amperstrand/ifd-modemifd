@@ -63,7 +63,10 @@ fn main() {
                 }
                 raw_apdu = Some(v);
             }
-            other => { eprintln!("unknown arg {other}"); std::process::exit(2); }
+            other => {
+                eprintln!("unknown arg {other}");
+                std::process::exit(2);
+            }
         }
     }
 
@@ -75,26 +78,34 @@ fn main() {
     });
     println!("reader: {}", reader.to_string_lossy());
 
-    let mut card = ctx.connect(reader, pcsc::ShareMode::Shared, pcsc::Protocols::T0)
+    let mut card = ctx
+        .connect(reader, pcsc::ShareMode::Shared, pcsc::Protocols::T0)
         .expect("SCardConnect — check polkit (access_card) if this fails as non-root");
 
     let mut ok = 0usize;
     let mut latencies: Vec<u128> = Vec::with_capacity(count);
     for i in 0..count {
-        let apdu_owned: Vec<u8> = raw_apdu.clone().unwrap_or_else(|| match (mode.as_str(), i % 2) {
-            ("large", _) => select_big_dummy(size),
-            ("mixed", 1) => select_big_dummy(size),
-            _ => select_mf(),
-        });
+        let apdu_owned: Vec<u8> =
+            raw_apdu
+                .clone()
+                .unwrap_or_else(|| match (mode.as_str(), i % 2) {
+                    ("large", _) => select_big_dummy(size),
+                    ("mixed", 1) => select_big_dummy(size),
+                    _ => select_mf(),
+                });
         let apdu: &[u8] = &apdu_owned;
         let t = Instant::now();
         let mut rsp = [0u8; 512];
-        let resp: &[u8] = card.transmit(apdu, &mut rsp).expect("SCardTransmit transport");
+        let resp: &[u8] = card
+            .transmit(apdu, &mut rsp)
+            .expect("SCardTransmit transport");
         let dt = t.elapsed().as_millis();
         let sw = [resp[resp.len() - 2], resp[resp.len() - 1]];
         let pass = accept_any_sw || sw == [0x90, 0x00] || sw == [0x6A, 0x82];
-        if pass { ok += 1; latencies.push(dt); }
-        else if ok + (count - i) <= count {
+        if pass {
+            ok += 1;
+            latencies.push(dt);
+        } else if ok + (count - i) <= count {
             eprintln!("APDU #{i}: unexpected SW {:02X?} after {} ms", sw, dt);
         }
     }
@@ -106,7 +117,11 @@ fn main() {
     let mut l = latencies.clone();
     let p50 = percentile(&mut l, 0.50);
     let p99 = percentile(&mut l, 0.99);
-    println!("result: {ok}/{count} ok ({:.1}%), p50 {p50} ms, p99 {p99} ms, mode {mode} size {size}",
-             100.0 * ok as f64 / count as f64);
-    if ok != count { std::process::exit(1); }
+    println!(
+        "result: {ok}/{count} ok ({:.1}%), p50 {p50} ms, p99 {p99} ms, mode {mode} size {size}",
+        100.0 * ok as f64 / count as f64
+    );
+    if ok != count {
+        std::process::exit(1);
+    }
 }
