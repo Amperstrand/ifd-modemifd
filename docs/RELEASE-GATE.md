@@ -76,7 +76,12 @@ dedicated unit test exists for the ABI itself).
 
 The hardening series landed 2026-10-24 was mis-numbered v3.4→v3.5.2
 even though it sits chronologically ON TOP of v4.0. The line is
-consolidated as **v4.1 (8d9a2a9, git tag v4.1)**: v4.0 semantics +
+consolidated as **v4.1 (8d9a2a9, git tag v4.1)** — evidence caveat,
+verbatim from the validation lane: **relay-fixes-verified /
+first-run-pending** (each relay fix was live-verified individually;
+the integrated ssh:// first-run + full validate.sh has NOT passed —
+hardware verdict pending; a VPCD-lane pivot is under way separately):
+v4.0 semantics +
 no-resend transport, strict CSIM framing, ssh:// exec transport with
 the hardware-proven relay (flock, baud/VMIN pins, self-reap, PDEATHSIG
 kill-chain), sacrificial/esimgate suites, pcsc-lite-2.x lane isolation.
