@@ -80,6 +80,8 @@ teardown() {
         kill "$SA_PID" 2>/dev/null || true
         SA_PID=""
     fi
+    pkill -f "systemd-socket-activate -l $LANE_SOCK" 2>/dev/null || true
+    pkill -f "pcscd --foreground -c $LANE_CONF_DIR" 2>/dev/null || true
     rm -f "$LANE_SOCK" 2>/dev/null || true
 }
 # shellcheck disable=SC2317  # invoked only via trap
@@ -191,15 +193,36 @@ say "lane-runner: hardware mode — private pcscd lane '$LANE'"
 printf 'FRIENDLYNAME %s\nDEVICENAME %s\nLIBPATH %s\nCHANNELID 1\n' \
     "$FRIENDLYNAME" "$MODEMIFD_ADDR" "$SO_FILE" > "$LANE_CONF_DIR/modemifd.conf" || exit 3
 
-"$SA_BIN" -l "$LANE_SOCK" -- "$PCSCD_BIN" --foreground -c "$LANE_CONF_DIR" &
-SA_PID=$!
+# pcsc-lite >= 2.0 refuses to start when the SYSTEM /run/pcscd/pcscd.comm
+# exists with a live pid (second-instance check runs before socket
+# activation), so the AGENTS.md plain recipe dies on 2.x hosts. Isolate the
+# instance in a private mount namespace with a tmpfs over /run/pcscd; the
+# lane socket still lives in the real fs for clients.
+PCSC_MAJOR=$("$PCSCD_BIN" --version 2>/dev/null | sed -n 's/^pcsc-lite version \([0-9]*\)\..*/\1/p')
+if [ "${PCSC_MAJOR:-0}" -ge 2 ]; then
+    echo "lane-runner: pcsc-lite $PCSC_MAJOR.x detected — namespace-isolated instance"
+    unshare -m sh -c "mount -t tmpfs tmpfs /run/pcscd && exec '$SA_BIN' -l '$LANE_SOCK' \
+-- '$PCSCD_BIN' --foreground -c '$LANE_CONF_DIR'" &
+    SA_PID=$!
+else
+    "$SA_BIN" -l "$LANE_SOCK" -- "$PCSCD_BIN" --foreground -c "$LANE_CONF_DIR" &
+    SA_PID=$!
+fi
 export PCSCLITE_CSOCK_NAME="$LANE_SOCK"
+
+i=0
+while [ ! -S "$LANE_SOCK" ]; do
+    i=$((i + 1))
+    [ "$i" -ge 40 ] && break
+    sleep 0.25
+done
+chmod 666 "$LANE_SOCK" 2>/dev/null
 
 say "waiting for reader '$FRIENDLYNAME' (by name, never first)"
 i=0
-until python3 "$HERE/suite.py" --list-readers 2>/dev/null | grep -Fxq "$FRIENDLYNAME"; do
+until python3 "$HERE/suite.py" --list-readers 2>/dev/null | grep -q "^$FRIENDLYNAME"; do
     i=$((i + 1))
-    if [ "$i" -ge 30 ]; then
+    if [ "$i" -ge 60 ]; then
         echo "lane-runner.sh: reader '$FRIENDLYNAME' never appeared on the private lane" >&2
         exit 3
     fi
