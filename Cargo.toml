@@ -8,7 +8,7 @@ repository = "https://github.com/Amperstrand/ifd-modemifd"
 
 [lib]
 name = "ifd_modemifd"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [profile.release]
 opt-level = "z"

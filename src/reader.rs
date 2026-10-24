@@ -8,6 +8,12 @@
 //!   firmwares; a modest gap between transmits is cheap insurance. Presence
 //!   probes must NOT be paced (pcscd polls presence frequently).
 
+//! Transaction semantics (hardening Tasks 1.2/1.3): an AT command whose
+//! line was fully written may already be executing on the modem/SIM —
+//! such exchanges are NEVER re-sent. Only a write that provably failed
+//! before the terminating CR (nothing executable left the host) may be
+//! retried, exactly once.
+
 use crate::at;
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -16,6 +22,11 @@ use std::time::{Duration, Instant};
 
 const TRANSMIT_GAP_MS: u64 = 400;
 const PRESENCE_CACHE_MS: u64 = 5000;
+/// Hard bound on response accumulation: a CSIM answer is at most ~520
+/// bytes of framing around ≤516 hex chars; everything beyond is a broken
+/// or hostile bridge and the connection is dropped instead of buffering
+/// without limit.
+const READ_CAP: usize = 8192;
 
 pub struct Reader {
     pub target: String,
@@ -25,18 +36,41 @@ pub struct Reader {
     present: Mutex<Option<bool>>,
 }
 
-pub enum AtResult {
+/// Typed exchange outcome. The distinction between NotSent, Refused and
+/// Ambiguous is what makes the retry policy safe:
+///
+/// - `NotSent` — the write failed before the terminating CR left the
+///   host, so the modem holds at most an unexecutable partial line.
+///   Retrying cannot duplicate anything.
+/// - `Refused` — our echo came back (the modem provably heard us) but it
+///   never produced a final result code (firmware-intercepted select,
+///   silent refusal). Card-level outcome; retrying rarely helps.
+/// - `Ambiguous` — the line was fully written but no echo was ever seen:
+///   a stalled bridge or a death mid-relay is indistinguishable from
+///   "the modem already ran the command". NEVER resend.
+#[derive(Debug)]
+pub enum AtOutcome {
+    /// final result code OK received after a matched prefix
     Ok(String),
-    Err(String),
-    Transport,
+    /// modem answered final ERROR (definitive refusal)
+    Error(String),
+    /// write failed before the command could execute — safe to retry
+    NotSent,
+    /// modem heard us but never answered — card-level refusal (no retry)
+    Refused,
+    /// command fully written, outcome unknown — transport-level (no retry)
+    Ambiguous,
 }
 
 fn append_log(msg: &str) {
-    use std::fs::OpenOptions;
-    use std::io::Write;
-    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/tmp/ifd-modemifd-reader.log") {
-        let _ = writeln!(f, "{}", msg);
-    }
+    crate::log(msg);
+}
+
+/// APDU payloads are authentication/provisioning secrets: their hex is
+/// logged only under IFD_MODEMIFD_LOG_APDU; the default records lengths.
+fn log_apdu_content() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("IFD_MODEMIFD_LOG_APDU").is_ok())
 }
 
 impl Reader {
@@ -100,6 +134,9 @@ impl Reader {
             }
             *lc = Some(Instant::now());
         }
+        // The written line ends in CR; write_all failing means the CR
+        // (the last byte) never left the host, so the modem cannot have
+        // executed anything.
         stream
             .write_all(format!("{}\r", cmd).as_bytes())
             .map_err(|_| ())
@@ -107,18 +144,19 @@ impl Reader {
 
     /// Echo-correlated, prefix-matched exchange. `pace` inserts the
     /// inter-command gap (transmits: yes; presence probes: no).
-    fn at_full(&self, cmd: &str, prefix: &str, total: Duration, pace: bool) -> AtResult {
+    /// Post-write failures never classify as NotSent.
+    fn at_full(&self, cmd: &str, prefix: &str, total: Duration, pace: bool) -> AtOutcome {
         let mut guard = self.stream_slot();
         if guard.is_none() {
             *guard = self.connect();
         }
         let stream = match guard.as_mut() {
             Some(s) => s,
-            None => return AtResult::Transport,
+            None => return AtOutcome::NotSent,
         };
         if self.prime_and_send(stream, cmd, pace).is_err() {
             *guard = None;
-            return AtResult::Transport;
+            return AtOutcome::NotSent;
         }
         let mut resp = Vec::with_capacity(2048);
         let start = Instant::now();
@@ -126,17 +164,38 @@ impl Reader {
         let mut saw_prefix = false;
         loop {
             if start.elapsed() >= total {
-                break;
+                // deadline hit: the echo discriminator separates a
+                // proven-heard modem (Refused) from an unknown-delivery
+                // one (Ambiguous); stale state is never reused
+                *guard = None;
+                return if echo_off.is_some() {
+                    AtOutcome::Refused
+                } else {
+                    AtOutcome::Ambiguous
+                };
             }
             let _ = stream.set_read_timeout(Some(Duration::from_millis(150)));
             let mut chunk = [0u8; 1024];
             match stream.read(&mut chunk) {
                 Ok(0) => {
                     *guard = None;
-                    return AtResult::Transport;
+                    return if echo_off.is_some() {
+                        AtOutcome::Refused
+                    } else {
+                        AtOutcome::Ambiguous
+                    };
                 }
                 Ok(n) => {
                     resp.extend_from_slice(&chunk[..n]);
+                    if resp.len() > READ_CAP {
+                        append_log("response cap exceeded — dropping connection");
+                        *guard = None;
+                        return if echo_off.is_some() {
+                            AtOutcome::Refused
+                        } else {
+                            AtOutcome::Ambiguous
+                        };
+                    }
                     let s = String::from_utf8_lossy(&resp).into_owned();
                     if echo_off.is_none() {
                         if let Some(p) = s.find(cmd) {
@@ -150,10 +209,10 @@ impl Reader {
                         }
                         if saw_prefix {
                             if tail.contains("OK\r") {
-                                return AtResult::Ok(s);
+                                return AtOutcome::Ok(s);
                             }
                             if tail.contains("ERROR") {
-                                return AtResult::Err(s);
+                                return AtOutcome::Error(s);
                             }
                         }
                     }
@@ -163,54 +222,59 @@ impl Reader {
                         || e.kind() == std::io::ErrorKind::Interrupted => {}
                 Err(_) => {
                     *guard = None;
-                    return AtResult::Transport;
+                    return if echo_off.is_some() {
+                        AtOutcome::Refused
+                    } else {
+                        AtOutcome::Ambiguous
+                    };
                 }
             }
         }
-        AtResult::Ok(String::from_utf8_lossy(&resp).into_owned())
     }
 
-    /// Paced, hardened exchange with one patient retry.
-    pub fn at_expect(&self, cmd: &str, prefix: &str, total: Duration) -> AtResult {
+    /// Paced exchange with exactly one retry, and only when the first
+    /// attempt provably never reached the modem (write failed). Any
+    /// post-write outcome is final: a re-sent AT+CSIM could duplicate a
+    /// state-changing APDU (GP secure channel, eSIM, PIN).
+    pub fn at_expect(&self, cmd: &str, prefix: &str, total: Duration) -> AtOutcome {
         match self.at_full(cmd, prefix, total, true) {
-            AtResult::Ok(s) if s.contains(prefix) => AtResult::Ok(s),
-            // Echo seen but no prefix: the modem heard us and chose not to
-            // answer (e.g. firmware-intercepted ISD-R select). Retrying
-            // rarely helps and costs probe-heavy tools 8s per unknown AID —
-            // treat as final; transmit maps it to SW 6F00.
-            AtResult::Ok(s) if s.contains(cmd) => AtResult::Ok(s),
-            // No echo at all: likely transport hiccup — reconnect + retry.
-            AtResult::Ok(_) => {
-                std::thread::sleep(Duration::from_millis(350));
-                *self.stream_slot() = None;
-                match self.at_full(cmd, prefix, total, true) {
-                    AtResult::Ok(s2) if s2.contains(prefix) => AtResult::Ok(s2),
-                    other => other,
-                }
-            }
-            AtResult::Transport => self.at_full(cmd, prefix, total, true),
+            AtOutcome::NotSent => self.at_full(cmd, prefix, total, true),
             other => other,
         }
     }
 
     /// APDU exchange over AT+CSIM (basic + logical channels pass through).
     pub fn transmit(&self, apdu: &[u8]) -> Result<Vec<u8>, ()> {
+        self.transmit_with_timeout(apdu, Duration::from_millis(8000))
+    }
+
+    /// Test-tunable variant of [`Reader::transmit`].
+    pub fn transmit_with_timeout(&self, apdu: &[u8], total: Duration) -> Result<Vec<u8>, ()> {
         if apdu.len() > 512 || apdu.is_empty() {
             return Ok(vec![0x6F, 0x00]);
         }
         let hex = at::bin2hex(apdu);
         let cmd = format!("AT+CSIM={},\"{}\"", apdu.len() * 2, hex);
-        append_log(&format!("XMIT {}", hex));
-        match self.at_expect(&cmd, "+CSIM:", Duration::from_millis(8000)) {
-            AtResult::Ok(resp) => {
-                let parsed = at::parse_csim(&resp);
+        if log_apdu_content() {
+            append_log(&format!("XMIT {}", hex));
+        } else {
+            append_log(&format!("XMIT len={}", apdu.len()));
+        }
+        match self.at_expect(&cmd, "+CSIM:", total) {
+            AtOutcome::Ok(resp) => {
+                let parsed = at::parse_csim_in(&resp, &cmd);
                 append_log(&format!("  RESP parsed={:?}", parsed.as_ref().map(|v| v.len())));
+                // Verified exchange, unparsable content: card-level
+                // failure, not a transport error (pySim-shell survives).
                 Ok(parsed.unwrap_or_else(|| vec![0x6F, 0x00]))
             }
-            // Modem refused OR went silent after retries: surface a
-            // card-level SW instead of killing the PC/SC session — tools
-            // like pySim-shell probe unknown AIDs and must survive them.
-            _ => Ok(vec![0x6F, 0x00]),
+            // Card/reader-level refusals: the modem IS the reader; a
+            // refusal or post-echo silence maps to SW 6F00 (v3.3
+            // semantics — AID-probing tools must survive them).
+            AtOutcome::Error(_) | AtOutcome::Refused => Ok(vec![0x6F, 0x00]),
+            // Delivery unknown or provably failed: never a synthetic
+            // card status — surface the transport failure to pcscd.
+            AtOutcome::NotSent | AtOutcome::Ambiguous => Err(()),
         }
     }
 
@@ -226,8 +290,8 @@ impl Reader {
         }
         let mut p = false;
         let mut got = false;
-        // Unpaced: pcscd's status thread polls presence frequently.
-        if let AtResult::Ok(resp) = self.at_full("AT+CPIN?", "+CPIN:", Duration::from_millis(2500), false) {
+        // Unpaced read-only probe; a retry cannot duplicate state.
+        if let AtOutcome::Ok(resp) = self.at_full("AT+CPIN?", "+CPIN:", Duration::from_millis(2500), false) {
             if resp.contains("+CPIN:") {
                 p = true;
                 got = true;
@@ -235,7 +299,7 @@ impl Reader {
         }
         if !got {
             *self.stream_slot() = None;
-            if let AtResult::Ok(r2) = self.at_full("AT+CPIN?", "+CPIN:", Duration::from_millis(2500), false) {
+            if let AtOutcome::Ok(r2) = self.at_full("AT+CPIN?", "+CPIN:", Duration::from_millis(2500), false) {
                 p = r2.contains("+CPIN:");
             }
         }
@@ -246,8 +310,8 @@ impl Reader {
 
     /// Session init (lpac-style capability probe). Echo ON for correlation.
     pub fn init_handshake(&self) -> bool {
-        matches!(self.at_full("ATE1", "OK", Duration::from_millis(2000), false), AtResult::Ok(_))
-            && matches!(self.at_full("AT+CSIM=?", "OK", Duration::from_millis(2500), false), AtResult::Ok(_))
+        matches!(self.at_full("ATE1", "OK", Duration::from_millis(2000), false), AtOutcome::Ok(_))
+            && matches!(self.at_full("AT+CSIM=?", "OK", Duration::from_millis(2500), false), AtOutcome::Ok(_))
     }
 
 
