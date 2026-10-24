@@ -3,7 +3,7 @@
 //! See README for setup, caveats and the stabilization roadmap.
 
 pub mod at;
-mod consts;
+pub mod consts;
 pub mod reader;
 
 use consts::*;
@@ -153,7 +153,11 @@ pub unsafe extern "C" fn IFDHCreateChannelByName(
 #[no_mangle]
 pub unsafe extern "C" fn IFDHCloseChannel(lun: c_ulong) -> RESPONSECODE {
     guard(|| {
-        if let Some(r) = readers().lock().unwrap_or_else(|e| e.into_inner()).remove(&lun) {
+        if let Some(r) = readers()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&lun)
+        {
             r.close();
         }
         IFD_SUCCESS
@@ -262,7 +266,7 @@ pub unsafe extern "C" fn IFDHSetCapabilities(
 #[no_mangle]
 pub unsafe extern "C" fn IFDHControl(
     _lun: c_ulong,
-    _code: c_ulong,
+    code: c_ulong,
     _tx: *const u8,
     _txl: c_ulong,
     _rx: *mut u8,
@@ -273,7 +277,14 @@ pub unsafe extern "C" fn IFDHControl(
         if !returned.is_null() {
             *returned = 0;
         }
-        IFD_SUCCESS
+        if code == CM_IOCTL_GET_FEATURE_REQUEST {
+            // This driver advertises ZERO features: no TLV is written,
+            // zero bytes returned, IFD_SUCCESS (pcscd then registers an
+            // empty feature list instead of erroring the reader).
+            IFD_SUCCESS
+        } else {
+            IFD_ERROR_NOT_SUPPORTED
+        }
     })
 }
 
@@ -294,7 +305,9 @@ pub unsafe extern "C" fn IFDHGetCapabilities(
     val: *mut u8,
 ) -> RESPONSECODE {
     guard(|| {
-        if get_reader(lun).is_none() { return IFD_COMMUNICATION_ERROR; }
+        if get_reader(lun).is_none() {
+            return IFD_COMMUNICATION_ERROR;
+        }
         if len.is_null() {
             return IFD_COMMUNICATION_ERROR;
         }
@@ -316,6 +329,9 @@ pub unsafe extern "C" fn IFDHGetCapabilities(
                     *len = 1;
                     return IFD_ERROR_INSUFFICIENT_BUFFER;
                 }
+                if val.is_null() {
+                    return IFD_COMMUNICATION_ERROR;
+                }
                 *val = 1;
                 *len = 1;
                 IFD_SUCCESS
@@ -325,7 +341,14 @@ pub unsafe extern "C" fn IFDHGetCapabilities(
                     *len = 1;
                     return IFD_ERROR_INSUFFICIENT_BUFFER;
                 }
-                *val = if t == TAG_IFD_SIMULTANEOUS_ACCESS as u32 { 16 } else { 1 };
+                if val.is_null() {
+                    return IFD_COMMUNICATION_ERROR;
+                }
+                *val = if t == TAG_IFD_SIMULTANEOUS_ACCESS as u32 {
+                    16
+                } else {
+                    1
+                };
                 *len = 1;
                 IFD_SUCCESS
             }
