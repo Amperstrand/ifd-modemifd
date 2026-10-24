@@ -65,7 +65,7 @@ dedicated unit test exists for the ABI itself).
 | Item | Verdict | Reason | Owner |
 |---|---|---|---|
 | Post-v3.4 hardware round on RG502Q (pacing + no-resend under a live modem; incl. response-lag thrash test) | BLOCKED | Requires the hardware lane's bench window; an active tollgate session is using the router's modem-data WAN, blocking modem-disturbing tests | Hardware lane |
-| Deployed bench `.so` rotation (pre-v3.4.1 binary still writes world-readable `/tmp` logs under live pcscd) | BLOCKED | Shared daemon; rotation is owner-gated, not autonomous | Bench owner |
+| Deployed bench `.so` rotation (pre-v3.4.1 binary still writes world-readable `/tmp` logs under live pcscd) | PASS (resolved 2026-10-24) | Executed under owner-granted authority, zero PC/SC clients in the window: new binary `f859540c…` = master `035ffe5` installed (fingerprint verified), old binary backed up root-only, 3.49 MB of secret-bearing logs deleted with checksums recorded, pcscd restarted, no new `/tmp` logs on the live daemon | Bench owner (delegated) — issue #6 |
 | Serial transport (`/dev/ttyUSBx` direct) | SKIP | Not implemented; documented limitation, not a criterion of any released version | — |
 | Multi-reader LUN registry beyond one reader | SKIP | Single-modem bench; registry present but untested beyond one reader (documented limitation) | — |
 | IFDHandler conformance sweep (IFDHControl/GET_FEATURE_REQUEST, GetCapabilities coverage, CGLA fallback) | SKIP | In progress in a parallel lane; not a criterion of v3.2–v3.4.1 — will gate the next version cut, not past ones | Conformance lane |
