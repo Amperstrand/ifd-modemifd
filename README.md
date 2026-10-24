@@ -70,12 +70,52 @@ code, plus the card-handling doctrine (never hammer secure-channel-class
 commands — one-shot authentication budgets on GP/eUICC cards are small and
 non-renewable). See `tests/hardware/README.md`.
 
+## Transport semantics (v3.4): no resend after full delivery
+
+An AT command whose line was fully written may already be executing on
+the modem/SIM — a re-sent `AT+CSIM` could duplicate a state-changing
+APDU (GP secure channel, eSIM provisioning, PIN) invisibly to the
+application. Since v3.4 every exchange is classified into a typed
+outcome (`AtOutcome` in `src/reader.rs`) and the retry policy follows
+the classification:
+
+| Outcome | Meaning | PC/SC client sees | Retried? |
+|---|---|---|---|
+| `Ok` | echo + `+CSIM:` answer + final `OK` all received | response APDU (unparsable content → SW 6F00) | never |
+| `Error` | modem answered final `ERROR` (definitive refusal) | SW 6F00 (card-level) | never |
+| `Refused` | our echo came back — the modem provably heard us — but no final result code (firmware-intercepted select, silent refusal) | SW 6F00 (card-level; v3.3 semantics preserved so AID-probing tools survive) | never |
+| `NotSent` | the write failed before the terminating CR left the host — nothing executable reached the modem | `IFD_COMMUNICATION_ERROR` (transport-level) | **yes — exactly once; the only retried class** |
+| `Ambiguous` | the line was fully written but no echo was ever seen (stalled bridge / death mid-relay — indistinguishable from "the modem already ran it") | `IFD_COMMUNICATION_ERROR` (transport-level) | never |
+
+Card-level failures (`Error`, `Refused`, or a verified `Ok` exchange
+whose content fails strict parsing) surface as SW `6F00`; exchanges with
+unknown or provably-failed delivery surface as transport errors — never
+a synthetic card status word.
+
+Strict CSIM framing (same release): the declared length of a
+`+CSIM: <len>,"HEX"` line must equal the hex-character count (TS 27.007
+§8.45, the pySim convention), the R-APDU is capped at 258 bytes, and the
+parse is **echo-correlated** — only `+CSIM:` lines after our command
+echo answer the current exchange, so a stale response from a lagging
+exchange can no longer be mistaken for the card's answer. Response
+accumulation is bounded at 8 KiB: a broken or hostile bridge drops the
+connection instead of buffering without limit.
+
+Software evidence: `tests/mock_at.rs` (15 tests, scripted mock modem) —
+the no-resend invariants (exactly one delivery under blackhole,
+post-delivery cut, echo-silence, missing final `OK`, and flood),
+echo correlation, strict framing, and parser unit cases. No post-v3.4
+hardware round on the RG502Q has been run yet — see
+`docs/RELEASE-GATE.md` for the recorded gap.
+
 ## Design decisions
 
-- Prefix-matched AT responses (`at_expect`): on a shared modem port, foreign
-  URCs (e.g. `+CPIN: READY`) arrive interleaved; early-exit on any `OK` eats
-  them (bug found in the retired C implementation and in any naive CSIM
-  loop). Same pattern lpac uses.
+- Prefix-matched, echo-correlated AT responses (`at_expect`): on a shared
+  modem port, foreign URCs (e.g. `+CPIN: READY`) arrive interleaved;
+  early-exit on any `OK` eats them (bug found in the retired C
+  implementation and in any naive CSIM loop). Same pattern lpac uses.
+  Since v3.4 only lines after our command echo answer the exchange
+  (see Transport semantics).
 - Pacing: see CSIM pacing above.
 - Fake ATR: modems cannot report the real ATR over AT commands; a sysmo-class
   T=0 ATR is substituted (documented limitation).
@@ -85,10 +125,14 @@ non-renewable). See `tests/hardware/README.md`.
 ## Known limitations
 
 - Response-lag aliasing under extreme modem thrash: when the firmware enters
-  the URC-flood state, responses can lag by one command; prefix matching
-  alone cannot prove which exchange a `+CSIM:` line answers. Recovery is
-  idle/CFUN cycle. (Not observed under paced operation, including the full
-  provisioning run.)
+  the URC-flood state, responses can lag by one command. Since v3.4 the
+  parse is echo-correlated — stale pre-echo `+CSIM:` lines are ignored and
+  an answer arriving with no echo at all is distrusted — which defeats the
+  observed aliasing shape. A modem emitting a stale answer *after* our
+  echo could still alias in theory; that shape has not been observed, and
+  a live thrash test is still pending (`docs/RELEASE-GATE.md`). Recovery
+  from the URC-flood state itself is idle/CFUN cycle. (No aliasing
+  observed under paced operation, including the full provisioning run.)
 - Serial transport (`/dev/ttyUSBx` direct) not yet implemented (TCP only).
 - Multi-reader LUN registry present but untested beyond one reader.
 
