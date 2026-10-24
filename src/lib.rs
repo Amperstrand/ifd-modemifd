@@ -10,7 +10,6 @@ use consts::*;
 use reader::Reader;
 use std::collections::HashMap;
 use std::ffi::{c_char, c_ulong, CStr};
-use std::fs::OpenOptions;
 use std::io::Write;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex, OnceLock};
