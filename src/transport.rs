@@ -112,13 +112,19 @@ pub fn parse_ssh_target(rest: &str) -> Option<SshTarget> {
     })
 }
 
-/// The remote relay, busybox-ash safe: put the tty in raw no-echo mode
-/// (tty echo would corrupt the ATE1 echo-correlation; the modem's own
-/// echo is the one the driver matches), then bridge the ssh channel to
-/// the tty with two cats sharing one read-write fd.
+/// The remote relay, busybox-ash safe: take an exclusive flock FIRST
+/// (two relays on one modem tty byte-eat each other — observed live
+/// 2026-10-24; belt-and-braces alongside the bench `modem-lane` lock),
+/// then put the tty in raw no-echo mode (tty echo would corrupt the
+/// ATE1 echo-correlation; the modem's own echo is the one the driver
+/// matches), then bridge the ssh channel to the tty with two cats
+/// sharing one read-write fd. flock is required, not optional: a
+/// missing applet fails the transport loudly instead of silently
+/// racing.
 fn remote_relay_script(tty: &str) -> String {
     format!(
-        "stty -F {tty} raw -echo 2>/dev/null || stty raw -echo <{tty}; \
+        "exec 9>/var/lock/modem-ifd.lock; flock 9 || exit 70; \
+         stty -F {tty} raw -echo 2>/dev/null || stty raw -echo <{tty}; \
          exec 3<>{tty}; cat <&3 & exec cat >&3"
     )
 }
