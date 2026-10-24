@@ -32,7 +32,10 @@ Evidence base:
 
 Rust `cdylib`, std-only, no external crates. The IFDHandler 3.0 C ABI is
 implemented in `src/lib.rs` (constants mirrored from ifdhandler.h in
-`src/consts.rs`). Panic-safe: every export is wrapped in `catch_unwind`.
+`src/consts.rs`). Panic-safe: every export that performs driver work is
+wrapped in `catch_unwind`; the two constant-success stubs
+(`IFDHSetProtocolParameters`, `IFDHSetCapabilities`) contain no
+fallible code.
 
 ## Modem findings baked into the driver (Quectel RG502Q-EA, Zyxel AACR firmware)
 
@@ -65,10 +68,12 @@ to anyone driving this modem family as a smartcard reader:
 `tests/hardware/validate.sh` — phased gate: direct-AT channel probe (with
 pcscd stopped for tty exclusivity), sustained small-APDU load, BPP-sized
 load, optional ISD-R session loop. Exit 0 = green light. The gate encodes
-every failure class that has actually burned a one-shot eSM activation
+every failure class that has actually burned a one-shot eSIM activation
 code, plus the card-handling doctrine (never hammer secure-channel-class
 commands — one-shot authentication budgets on GP/eUICC cards are small and
-non-renewable). See `tests/hardware/README.md`.
+non-renewable). See `tests/hardware/README.md`. Per-version release
+verdicts (PASS/FAIL/SKIP/BLOCKED, mapped to existing evidence only):
+`docs/RELEASE-GATE.md`.
 
 ## Transport semantics (v3.4): no resend after full delivery
 
