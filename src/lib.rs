@@ -60,11 +60,16 @@ fn open_debug_log() -> Option<std::fs::File> {
         .ok()?;
     // `.mode()` only applies at creation: tighten files left looser by
     // earlier binaries (the pre-v3.4.1 0644 log) via the fd — fchmod,
-    // race-free, never touching a different inode than we opened.
+    // race-free, never touching a different inode than we opened. If
+    // the tightening fails (EPERM on a writable file owned by another
+    // user), fail CLOSED: no log handle, no append — secrets never land
+    // in a file the logger could not secure.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+        if f.set_permissions(std::fs::Permissions::from_mode(0o600)).is_err() {
+            return None;
+        }
     }
     Some(f)
 }
