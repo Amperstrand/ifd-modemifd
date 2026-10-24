@@ -67,17 +67,24 @@ to anyone driving this modem family as a smartcard reader:
 - **The AT port shuffles across resets** (ttyUSB0-3): never hardcode it.
   The reference socat bridge init script auto-detects at start.
 
-## Validation gate (run before any one-shot operation)
+## Validation gate (split suites, dry-run by default)
 
-`tests/hardware/validate.sh` — phased gate: direct-AT channel probe (with
-pcscd stopped for tty exclusivity), sustained small-APDU load, BPP-sized
-load, optional ISD-R session loop. Exit 0 = green light. The gate encodes
-every failure class that has actually burned a one-shot eSIM activation
-code, plus the card-handling doctrine (never hammer secure-channel-class
-commands — one-shot authentication budgets on GP/eUICC cards are small and
-non-renewable). See `tests/hardware/README.md`. Per-version release
-verdicts (PASS/FAIL/SKIP/BLOCKED, mapped to existing evidence only):
-`docs/RELEASE-GATE.md`.
+`tests/hardware/validate.sh` chains two focused suites —
+`validate-sacrificial.sh` (zero-risk class-A qualification of a disposable
+SIM: SELECT by FID, EF reads via LOGICAL channels, modem drop fingerprints)
+and `validate-esimgate.sh` (pre-provisioning read-only eSIM gate: ISD-R
+readiness, EID, chipInfo). The default run is a **dry-run against a local
+mock modem** — no hardware, no pcscd. Hardware sessions run through
+`tests/hardware/lane-runner.sh` (private socket-activated pcscd lane,
+reader selected BY FRIENDLYNAME, card-safety declarations enforced — the
+production 9eSIM is refused as a target). Reports are stamped JSON+MD with
+truthful PASS/FAIL/SKIP/BLOCKED verdicts; unexecuted cases are never green.
+The gate encodes every failure class that has actually burned a one-shot
+eSIM activation code, plus the card-handling doctrine (never hammer
+secure-channel-class commands — one-shot authentication budgets on GP/eUICC
+cards are small and non-renewable). See `tests/hardware/README.md`.
+Per-version release verdicts (PASS/FAIL/SKIP/BLOCKED, mapped to existing
+evidence only): `docs/RELEASE-GATE.md`.
 
 ## Transport semantics (v3.4): no resend after full delivery
 
