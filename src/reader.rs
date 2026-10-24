@@ -106,12 +106,7 @@ impl Reader {
     }
 
     /// drain + optional pacing + write. Caller holds the stream guard.
-    fn prime_and_send(
-        &self,
-        stream: &mut TcpStream,
-        cmd: &str,
-        pace: bool,
-    ) -> Result<(), ()> {
+    fn prime_and_send(&self, stream: &mut TcpStream, cmd: &str, pace: bool) -> Result<(), ()> {
         let _ = stream.set_nonblocking(true);
         let mut sink = [0u8; 2048];
         let deadline = Instant::now() + Duration::from_millis(120);
@@ -263,7 +258,10 @@ impl Reader {
         match self.at_expect(&cmd, "+CSIM:", total) {
             AtOutcome::Ok(resp) => {
                 let parsed = at::parse_csim_in(&resp, &cmd);
-                append_log(&format!("  RESP parsed={:?}", parsed.as_ref().map(|v| v.len())));
+                append_log(&format!(
+                    "  RESP parsed={:?}",
+                    parsed.as_ref().map(|v| v.len())
+                ));
                 // Verified exchange, unparsable content: card-level
                 // failure, not a transport error (pySim-shell survives).
                 Ok(parsed.unwrap_or_else(|| vec![0x6F, 0x00]))
@@ -291,7 +289,9 @@ impl Reader {
         let mut p = false;
         let mut got = false;
         // Unpaced read-only probe; a retry cannot duplicate state.
-        if let AtOutcome::Ok(resp) = self.at_full("AT+CPIN?", "+CPIN:", Duration::from_millis(2500), false) {
+        if let AtOutcome::Ok(resp) =
+            self.at_full("AT+CPIN?", "+CPIN:", Duration::from_millis(2500), false)
+        {
             if resp.contains("+CPIN:") {
                 p = true;
                 got = true;
@@ -299,7 +299,9 @@ impl Reader {
         }
         if !got {
             *self.stream_slot() = None;
-            if let AtOutcome::Ok(r2) = self.at_full("AT+CPIN?", "+CPIN:", Duration::from_millis(2500), false) {
+            if let AtOutcome::Ok(r2) =
+                self.at_full("AT+CPIN?", "+CPIN:", Duration::from_millis(2500), false)
+            {
                 p = r2.contains("+CPIN:");
             }
         }
@@ -310,10 +312,14 @@ impl Reader {
 
     /// Session init (lpac-style capability probe). Echo ON for correlation.
     pub fn init_handshake(&self) -> bool {
-        matches!(self.at_full("ATE1", "OK", Duration::from_millis(2000), false), AtOutcome::Ok(_))
-            && matches!(self.at_full("AT+CSIM=?", "OK", Duration::from_millis(2500), false), AtOutcome::Ok(_))
+        matches!(
+            self.at_full("ATE1", "OK", Duration::from_millis(2000), false),
+            AtOutcome::Ok(_)
+        ) && matches!(
+            self.at_full("AT+CSIM=?", "OK", Duration::from_millis(2500), false),
+            AtOutcome::Ok(_)
+        )
     }
-
 
     /// PC/SC clients expect a freshly reset card on SCardConnect. A modem
     /// cannot cold-reset its SIM on demand; the closest safe emulation is

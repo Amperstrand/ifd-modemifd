@@ -9,7 +9,11 @@ use ifd_modemifd::log;
 
 fn private_log_path(tag: &str) -> String {
     let mut p = std::env::temp_dir();
-    p.push(format!("ifd-modemifd-test-{}-{}.log", tag, std::process::id()));
+    p.push(format!(
+        "ifd-modemifd-test-{}-{}.log",
+        tag,
+        std::process::id()
+    ));
     p.to_str().expect("utf8 tmp path").to_string()
 }
 
