@@ -2,9 +2,9 @@
 //! PC/SC reader. Transport: TCP bridge (socat) to the modem AT port.
 //! See README for setup, caveats and the stabilization roadmap.
 
-mod at;
+pub mod at;
 mod consts;
-mod reader;
+pub mod reader;
 
 use consts::*;
 use reader::Reader;

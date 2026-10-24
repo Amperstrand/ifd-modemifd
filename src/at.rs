@@ -31,13 +31,41 @@ pub fn hex2bin(s: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// Extract the quoted hex payload from a `+CSIM: <len>,"HEX"` line.
+/// Max R-APDU the parser accepts: 256 data bytes + SW (TS 27.007 CSIM
+/// carries a response APDU; >516 hex chars is a malformed/hostile line).
+const CSIM_MAX_RESPONSE_HEX: usize = 516;
+
+/// Extract the quoted hex payload from a `+CSIM: <len>,"HEX"` line,
+/// strictly: the declared length MUST equal the hex-character count
+/// (TS 27.007 §8.45 — same convention as +CGLA/+CRSM; pySim's modem
+/// transport encodes `AT+CSIM=%d,"%s"` with the hex-string length) and
+/// the payload MUST fit an R-APDU. Returns None on any mismatch.
 pub fn parse_csim(resp: &str) -> Option<Vec<u8>> {
-    let line = resp.lines().find(|l| l.starts_with("+CSIM:"))?;
-    let q1 = line.find('"')?;
-    let rest = &line[q1 + 1..];
-    let q2 = rest.find('"')?;
-    hex2bin(&rest[..q2])
+    parse_csim_lines(resp.lines())
+}
+
+/// Echo-correlated parse: only `+CSIM:` lines AFTER the last occurrence
+/// of `echo` (our command echo) answer this exchange — a stale `+CSIM`
+/// from a lagging previous exchange arriving before the echo must never
+/// be mistaken for this command's card answer (response-lag aliasing,
+/// conwrt-bench #22).
+pub fn parse_csim_in(resp: &str, echo: &str) -> Option<Vec<u8>> {
+    let at = resp.rfind(echo)?;
+    parse_csim_lines(resp[at + echo.len()..].lines())
+}
+
+fn parse_csim_lines<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<Vec<u8>> {
+    let line = lines.find(|l| l.starts_with("+CSIM:"))?;    let rest = line.strip_prefix("+CSIM:")?.trim_start();
+    let (lenstr, quoted) = rest.split_once(',')?;
+    let declared: usize = lenstr.trim().parse().ok()?;
+    let q1 = quoted.find('"')?;
+    let hexpart = &quoted[q1 + 1..];
+    let q2 = hexpart.find('"')?;
+    let hexs = &hexpart[..q2];
+    if declared != hexs.len() || hexs.len() > CSIM_MAX_RESPONSE_HEX {
+        return None;
+    }
+    hex2bin(hexs)
 }
 
 pub fn parse_cpin_present(resp: &str) -> bool {
