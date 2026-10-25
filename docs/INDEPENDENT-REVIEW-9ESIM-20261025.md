@@ -599,6 +599,25 @@ CONDITIONS` section) including the pre-staged re-enable one-liner —
 binding condition 3 closed before the Gate-2 artifact landed. Awaiting
 artifact (mipsel build in flight, watcher set); reviewer turnaround
 same-hour on receipt.
+### Gate-2 artifact review: PASS (2026-10-25, this review — all first-hand)
+
+`lpac-mt7621-gate2-mipsel_24kc.tar.gz` sha256 `b587d46f…aa9b44`
+(exact match, re-hashed on disk); git stack `route1-gate2` verified:
+`d68be3b` (zero-init segfix) ← `da047ad` (#452) ← `2c65cf6` (#446) ←
+`1982d5e` (uppercase) ← `a43e46a` (pin) — the amended spec to the
+letter. Fingerprints in the correct objects (uppercase table in
+`libeuicc.so`; `LPAC_HTTP_SSL_VERIFY` in `driver_http_curl.so`;
+`at_expect_with_deadline` in `driver_apdu_at_csim.so`). NEEDED-closure
+clean; libcurl is openssl-bound with `libssl`/`libcrypto`/`libatomic`
+**bundled — self-contained TLS remedy**. Deployment note recorded: the
+bundled `usr/lib/libcurl.so.4` lands at the same path as the router's
+system (mbedtls) libcurl — extraction deliberately replaces it,
+superseding the gnutls symlink-repoint remedy; post-window restore =
+reinstall feed libcurl or adopt (owner choice). Build-process note: a
+template bug briefly produced a pin-only artifact (`5b03fafe`),
+caught by the in-manifest stack line before any consumption or router
+contact; branch-guard added; superseded shas documented. **T-A
+proceeds on pK's co-sign per the two-party gate.**
 
 ### Owner directive (2026-10-25): test profiles FIRST
 
