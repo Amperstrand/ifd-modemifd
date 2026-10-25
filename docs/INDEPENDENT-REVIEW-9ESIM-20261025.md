@@ -824,6 +824,62 @@ rehearsal-instrument evidence (`rehearse_c0_battery.py`) is regenerable
 in-tree. **The session script is runbook-ready; the window now needs
 only owner GO.**
 
+### TLS verification finding — lpac HTTP leg ships unauthenticated (2026-10-25, this review; AMEND to the Route-1 preflight checklist)
+
+Verified in the pinned source (`a43e46ae`, `driver/http/curl.c:92-93`):
+
+```c
+curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+```
+
+Consequences:
+
+- Every HTTPS exchange lpac performs — including the one-shot SM-DP+
+  download that carries the activation credential — is **unauthenticated
+  against active network attackers**. The GSMA-CI1-augmented
+  `ca-certificates.crt` anchors only the standalone `curl` precheck
+  (which verifies by default); it does nothing for lpac's own leg.
+- The Route-1 checklist's §0 framing ("chain trust is irrelevant to
+  lpac; the only failure mode is handshake crypto") is true as a
+  description but unacceptable as a posture — it silently accepts the
+  unauthenticated leg for the highest-consequence exchange in the plan.
+- **Correction to this review's own record**: gate D7's "TLS
+  verification never weakened (GSMA root bundle present)" was stated as
+  if verified — the bundle's presence was verified, but with upstream's
+  verification-off default the bundle was never *load-bearing* for
+  lpac. Downgraded from Verified to **Contradicted-as-implemented**;
+  now enforceable via the remedy below.
+- Also flagged by the OpenWrt libcurl maintainer in the #24963 thread
+  (2024-09-12) — the class was known publicly; our ecosystem had not
+  propagated it into the window design.
+
+**Remedy (concrete, already in-ecosystem)**: lpac PR **#452**
+("driver/http: make TLS verification configurable, add trust store") —
+open upstream, and part of fildunsky's curated patch set. The window's
+lpac artifacts (uqmi route and any AT-route provisioning build) must
+carry the #452-class patch with **verification ON**, trust store =
+the fingerprint-verified GSMA-augmented bundle. Preflight additions:
+
+1. Binary-fingerprint the patched driver (`driver_http_curl.so`)
+   for the verification-on/trust-store code path (same discipline as
+   the atcsimUC fingerprints).
+2. The router TLS precheck runs `curl --cacert <augmented bundle>`
+   **without** `-k` — chain validation explicit, not incidental; any
+   SSL error stops the window (as the checklist already says).
+3. The libcurl symlink repoint is system-wide (curl CLI flips too —
+   which is what makes the precheck faithful); add the revert to the
+   post-window restore list.
+
+Smaller checklist items: `lpac profile nickname` (the B5 fallback
+rehearsal) writes persistent card metadata — document it as a card-NVM
+write (reversible by re-set), prefer notification-process, and if used,
+set an obviously-test value with documented cleanup. Credential
+discipline and the §C no-retry/quote discipline are endorsed as written.
+
+Classification: security-class review finding; write-window hard gate;
+does not block the read-only milestone (no HTTP involved).
+
 ### Version-lever assessment (2026-10-25, owner question)
 
 - **lpac**: the pinned `a43e46ae` **is upstream main** (verified: 0
