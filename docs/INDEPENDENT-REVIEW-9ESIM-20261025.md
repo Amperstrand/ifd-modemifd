@@ -593,6 +593,13 @@ binding T-B conditions** (the operationalization of "safely able"):
 
 Default-stop: any T-A anomaly holds T-B pending owner consultation.
 
+Execution-staging confirmation (pH, same day): the five
+conditions are staged verbatim in the private runbook (`T-B BINDING
+CONDITIONS` section) including the pre-staged re-enable one-liner —
+binding condition 3 closed before the Gate-2 artifact landed. Awaiting
+artifact (mipsel build in flight, watcher set); reviewer turnaround
+same-hour on receipt.
+
 ### Owner directive (2026-10-25): test profiles FIRST
 
 
