@@ -18,6 +18,7 @@
 
 TS=$(date -u +%Y%m%dT%H%M%SZ)
 DIR="/tmp/onrouter-readonly-$TS"
+RUNGS="${RUNGS:-r1a r1b r2}"
 LPAC_STOCK="${LPAC_STOCK:-/usr/bin/lpac}"          # stock a43e46ae at_csim
 LPAC_UC="${LPAC_UC:-/usr/bin/lpac-atcsimuc}"        # fed4c6c1 discrimination build
 BATTERY="${BATTERY:-/usr/libexec/at_csim_c0_battery.sh}"
@@ -27,6 +28,18 @@ say() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $*" | tee -a "$DIR/session.log"; }
 mkdir -p "$DIR"
 
 stop() { say "STOP: $*"; say "artifacts: $DIR"; exit 1; }
+
+# Router-reality timeout (stock OpenWrt has no `timeout` applet; overlay is
+# too tight to install coreutils-timeout for this): background + watchdog.
+run_to() {  # run_to <secs> <cmd...>
+  _secs=$1; shift
+  "$@" &
+  _p=$!
+  _d=$(( $(date +%s) + _secs ))
+  while kill -0 "$_p" 2>/dev/null && [ "$(date +%s)" -lt "$_d" ]; do sleep 2; done
+  if kill -0 "$_p" 2>/dev/null; then kill "$_p" 2>/dev/null; wait "$_p" 2>/dev/null; return 124; fi
+  wait "$_p"
+}
 
 # Reader-backed AT exchange (a battery that cannot fail verifies nothing):
 # start a reader, send, collect, parse. Prints the raw response block.
@@ -104,22 +117,26 @@ fi
 say "deployment-order check: stock at_csim driver confirmed (no UC overlay)"
 cfun_recycle
 say "-- R1a: stock lpac chip info (AT_DEBUG on) --"
-AT_DEBUG=1 LPAC_APDU=at_csim LPAC_APDU_AT_DEVICE="$TTY" timeout 120 "$LPAC_STOCK" chip info \
+if case " $RUNGS " in *" r1a "*) true;; *) false;; esac; then
+AT_DEBUG=1 LPAC_APDU=at_csim LPAC_APDU_AT_DEVICE="$TTY" run_to 120 "$LPAC_STOCK" chip info \
   > "$DIR/r1a-chipinfo.out" 2> "$DIR/r1a-chipinfo.atdebug"
 r1a=$?
 say "R1a exit=$r1a (checklist 1: grep the lowercase-ERROR fingerprint)"
 grep -m3 -i -E 'error|fail' "$DIR/r1a-chipinfo.atdebug" || true
+else say "SKIP R1a (RUNGS=$RUNGS)"; fi
 
 # ---------- R1b: atcsimUC (uppercase + #446), same gate ----------
 cfun_recycle
 say "-- R1b: atcsimUC chip info (AT_DEBUG on) --"
+if case " $RUNGS " in *" r1b "*) true;; *) false;; esac; then
 if [ -n "${LPAC_UC_ENV:-}" ]; then
-  AT_DEBUG=1 LPAC_APDU=at_csim LPAC_APDU_AT_DEVICE="$TTY" timeout 120 env $LPAC_UC_ENV "$LPAC_UC" chip info \
+  AT_DEBUG=1 LPAC_APDU=at_csim LPAC_APDU_AT_DEVICE="$TTY" run_to 120 env $LPAC_UC_ENV "$LPAC_UC" chip info \
     > "$DIR/r1b-chipinfo.out" 2> "$DIR/r1b-chipinfo.atdebug"
 else
-  AT_DEBUG=1 LPAC_APDU=at_csim LPAC_APDU_AT_DEVICE="$TTY" timeout 120 "$LPAC_UC" chip info \
+  AT_DEBUG=1 LPAC_APDU=at_csim LPAC_APDU_AT_DEVICE="$TTY" run_to 120 "$LPAC_UC" chip info \
     > "$DIR/r1b-chipinfo.out" 2> "$DIR/r1b-chipinfo.atdebug"
 fi
+else say "SKIP R1b (RUNGS=$RUNGS)"; fi
 r1b=$?
 say "R1b exit=$r1b (checklist 2: EID printed? die-after-ES10-JSON = segfault caveat, not transport)"
 EIDLINE=$(grep -o '"eid"[: ]*"[0-9A-Fa-f]\{32\}"' "$DIR/r1b-chipinfo.out" | head -1)
@@ -129,7 +146,7 @@ tail -3 "$DIR/r1b-chipinfo.out" 2>/dev/null || true
 # ---------- R2: corrected C0 battery (rehearsed instrument) ----------
 cfun_recycle
 say "-- R2: corrected C0 battery (N=2) --"
-if [ -x "$BATTERY" ]; then
+if [ -x "$BATTERY" ] && case " $RUNGS " in *" r2 "*) true;; *) false;; esac; then
   sh "$BATTERY" "$TTY" 2 > "$DIR/r2-battery.log" 2>&1
   r2=$?
   say "R2 exit=$r2"; grep -E "C0:|hex-case:|inline-FCI:" "$DIR/r2-battery.log"
