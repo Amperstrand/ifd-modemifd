@@ -451,8 +451,40 @@ surprise on the chosen path (covered by Gate 1) > composition wedge
 rollback; not one-shot) > post-enable registration (rollback to prior
 profile documented).
 
-Everything else is saturated: further transport research has
-diminishing returns against running the staged windows.
+### Owner directive (2026-10-25): test profiles FIRST
+
+The rehearsal download is promoted from recommendation to plan of
+record: provision a **free, reusable test profile before the silent.link
+one-shot**. Selection: the **Speedtest profile**
+(`rsp.truphone.com`, matching-id `QRF-SPEEDTEST`, per the osmocom
+Known-Test-Profiles page) — unlike BetterRoaming profiles (freely
+downloadable but subscription-gated for registration), it is designed
+to register and carry data for actual speed tests, matching the owner's
+intent. Bonus validation: the canonical #24963 mbedtls failure was
+reported against this very endpoint — the test exercises the identical
+TLS-remedy path as the real window.
+
+Phasing (mandatory — the enable displaces the operational profile):
+
+- **Phase T-A — machinery rehearsal (download only)**: free-NVM gate →
+  `lpac profile download` of the Speedtest profile → verify
+  present-but-disabled → notification process → machinery proven.
+  Card-state impact: one disabled profile added; deletable. nadanada
+  untouched (enabled throughout). Failure here is *free* — diagnose and
+  retry at will; that is the point of running it first.
+- **Phase T-B — enable + speed test + rollback (separately gated)**:
+  enabling the test profile **displaces nadanada** (non-MEP) — tollgate
+  rides VLAN200 for the duration; run the speed test; then re-enable
+  nadanada (the documented enable ladder in reverse) and verify
+  registration + QCCID before restoring the tollgate path. Optional
+  cleanup: `lpac profile delete` of the test profile afterward.
+
+Sequencing unchanged otherwise: read-only window (Gate 1) still runs
+first — its outcome picks the transport the test download rides; the
+hardened build (Gate 2: #452 + segfault fix) is required before T-A
+(the truphone endpoint is itself in the mbedtls-failure class).
+Remaining owner-side item: silent.link reissue policy (parallel, before
+the one-shot).
 
 ---
 
