@@ -129,6 +129,30 @@ conditions (live failover check, pre-staged rollback one-liner,
 time-boxed supervised session, full post-verification, default-stop).
 Results and wire captures to be recorded here by the executing lane.
 
+## 10. Composition & mode map (community-researched 2026-10-25)
+
+Researched: OpenWrt forum NR7101 performance thread (2023-2026,
+qmi_wwan maintainer participation), openwrt/openwrt#10577, Quectel
+forum firmware threads.
+
+| Mode (`AT+QCFG="usbnet",N`) | State on this box | Evidence |
+|---|---|---|
+| **1 = ECM (current)** | **proven stable daily state** — data session, tollgate class loads; every observed wedge was profile-op-triggered (firmware USIM re-init), never composition-related | this record, all of 2026-10-25 |
+| 0 = QMI (factory) | functional but documented in-kernel ceiling/instability class: `NETDEV WATCHDOG: wwan0 (qmi_wwan) transmit queue timed out` at ~200 Mbit/s, MT7621 softirq-bound; maintainer attributes to no-QMAP in the in-kernel driver | openwrt/openwrt#10577 (open since 2022, maintainer-acknowledged); forum thread |
+| 2 = MBIM | the qmi_wwan kernel maintainer's own choice for this modem ("I am using the modem in MBIM mode"); middle path; our lpac mbim artifacts already built+hashed | #10577 comment, 2022-09-01 |
+| vendor q_drivers/QMAP (out-of-tree kmods) | the performance route only: ~200 -> ~480 Mbit/s at ~20% CPU (kernel-6.12-patched SDK build, July 2026 gist); irrelevant to stability goals | forum thread, alaraun 2026-07-01 |
+
+Stable-state implications: (a) **stay ECM for daily operation** — the
+proven-stable configuration; (b) IF a composition experiment is ever
+needed for the wedge hypothesis, **MBIM is the better-designed test**
+than in-kernel QMI (introduces fewer new variables — maintainer-endorsed
+mode, plus our existing mbim artifacts); note any composition flip costs
+two extra cold resets on a reset-sensitive modem; (c) throughput work,
+if ever wanted, is the separate vendor-q_drivers project. Also noted
+from the record: a smart-quote vs straight-quote AT trap (a user's
+`AT+QCFG` ERRORs were typographic quotes — the same class of silent
+encoding traps as our hex-case finding).
+
 ## 9. Reproduction checklist (condensed)
 
 1. Verify artifact sha `b587d46f…` + the three fingerprints (§3).
