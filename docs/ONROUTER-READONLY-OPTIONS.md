@@ -152,12 +152,34 @@ in below):
 1. **R1** — at_csim probe with `AT_DEBUG` capture, post-CFUN recycle. Free.
    Decides the AT read path and feeds the mechanism question; its
    timestamped capture also resolves the pacing discrepancy (flag 3).
+   **Amended (correction 4, fork-research §5): pre-registered prediction —
+   the stock failures are client-side lowercase-hex rejection** (lpac
+   `hexutil.c` emits lowercase; Qualcomm-class modems documented rejecting
+   lowercase with fast bare `ERROR` — pySim gerrit 8e15c18, lpac #428; our
+   UPPERCASE driver is this modem's proven success). A discrimination
+   artifact is built and verified for the same rung:
+   `lpac-mt7621-atcsimUC-a43e46ae.tar.gz` (pin + uppercase hexutil + PR
+   #446 bounded deadlines; sha256 `fed4c6c1…0b4b6`; binary fingerprints:
+   `0123456789ABCDEF` in libeuicc, `at_expect_with_deadline` +
+   `AT command timeout (%d ms)` in driver_apdu_at_csim). Stock fails +
+   uppercase flips → AT path revives with zero composition switch. Caveat
+   even on success: lpac at_csim has no pacing — read-only scope plausible
+   (short exchanges), write window stays on paced transports.
 2. **R2** — corrected C0 battery (`tests/hardware/at_csim_c0_battery.sh`,
    issue #32). Free, read-only, under lane lock. Decides the `61xx`/`6A82`
    mechanism (correction 3 voided the old evidence; this re-establishes it
    with clean instruments).
 3. **R3a** — `usbnet=0` (factory) + feed lpac `uqmi` read-only gate. The
    only rung with exact-modem transport proof; stock tooling; best end state.
+   Pinned-source provenance artifact built+verified:
+   `lpac-mt7621-uqmi-a43e46ae.tar.gz` (sha256 `e5e04429…8cef5d8`; driver set
+   at_csim/at/stdio/uqmi + http curl/stdio; `--get-client-id uim`/
+   `--uim-slot` fingerprints present; closure clean). **Expectation note
+   (RM551 precedent):** reboot-state APDU flakiness on fresh composition —
+   run a settle/wake-up probe before interpreting first-minute failures as
+   an R3a verdict. **Caution:** the official 25.12 feed lpac ships a broken
+   stdio backend (fork-research §4) — prefer pinned artifacts or the
+   fildunsky `lpac-25.12.5-ramips-mt7621.apk` third binary.
 4. **R3b** — `usbnet=2` + verified mbim artifact, if R3a's gate fails.
 5. **R4** — pcscd-on-router build (option 4), goal-gated.
 
@@ -178,6 +200,15 @@ before this rung is adopted). If declined, the ladder runs as R1→R4 directly
 
 Every rung read-only up to this milestone; every gate = EID ×3 + expected
 profile set + notification count, with stop-conditions on any mismatch.
+
+**Instrument rehearsal (2026-10-25, mock-PTY):** `at_csim_c0_battery.sh`
+now includes the hex-case control cell (correction-4 discriminator) and has
+been rehearsed end-to-end against `tests/hardware/mock_c0_responder.py`
+(raw PTY — a real modem port is raw, `stty raw -echo`; the first rehearsal
+run's ECHO-feedback bug is itself a lesson in why): three scenarios all
+PASS — c0-works → exit 0 `ALLOCATED-CHANNEL-OK` + `LOWERCASE-REJECTED`;
+c0-fails → exit 1 `FAIL(6D00)` + `LOWERCASE-REJECTED`; case-tolerant →
+`LOWERCASE-ACCEPTED(9000)`. Reproduce: see the responder's docstring.
 
 ## Cross-cutting flags
 
@@ -208,6 +239,16 @@ profile set + notification count, with stop-conditions on any mismatch.
    enable (openwrt/packages PR #24883 notes) — matches wwand's power-cycle
    finding.
 5. **The modem AT port shuffles across resets** — auto-detect only.
+6. **libqmi UIM APIs "compiled out" = collection config, not version**
+   (mechanism named by fork-research): the feed's libqmi meson `collection`
+   option (minimal/basic vs full) prunes the UIM APDU message families;
+   our SDK staging built a pruned collection. A full-collection libqmi
+   build would carry them — native-qmi fallback stays deferred
+   (driver-class), uqmi first.
+7. **ECP-family enable quirks (future write window):** the official lpac
+   manpage — "try AID, ICCID, refreshFlag with 1 or 0 to find out the
+   working way for these chips" — plan the enable rung as an iterate-variants
+   ladder, not a one-shot assumption.
 
 ## Open questions for external review
 

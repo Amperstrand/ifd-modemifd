@@ -68,7 +68,7 @@ csim() {
 # sw_extract <field-index> — parse '+CSIM: n,"HEX"' SW1SW2 (last 2 bytes of HEX)
 last_sw() { echo "$RESP" | grep -o '+CSIM: [0-9]*,"[0-9A-Fa-f]*"' | sed 's/.*"\([0-9A-Fa-f]*\)".*/\1/' | tail -1 | tr 'a-f' 'A-F'; }
 
-RESULT_C0="NOT-TESTED"; RESULT_FCI="NOT-TESTED"; LEAKED=0; OPENED=""
+RESULT_C0="NOT-TESTED"; RESULT_FCI="NOT-TESTED"; RESULT_CASE="NOT-TESTED"; LEAKED=0; OPENED=""
 
 close_channel() {
   ch=$1
@@ -94,6 +94,17 @@ case "$sw" in
   9000) say "basic channel: no 61xx offered (P2=0C — expected)";;
   *) say "basic channel SELECT unexpected SW: $sw";;
 esac
+
+# --- hex-case control (correction 4 discriminator; pySim gerrit 8e15c18 shape) ---
+# Same SELECT-by-FID as above, LOWERCASE hex. Case-rejecting Qualcomm-class
+# modems answer bare ERROR (fast-fail); case-tolerant ones answer normally.
+csim '00a4000c022fe2' 3 1
+lowsw=$(last_sw)
+case "$lowsw" in
+  *9000|*61*) RESULT_CASE="LOWERCASE-ACCEPTED($lowsw)";;
+  *) RESULT_CASE="LOWERCASE-REJECTED($(echo "$RESP" | head -2 | tr '\n' '|' | cut -c1-40))";;
+esac
+say "hex-case control: lowercase SELECT -> $RESULT_CASE"
 
 i=0
 while [ "$i" -lt "$N" ]; do
@@ -122,7 +133,7 @@ while [ "$i" -lt "$N" ]; do
       c0sw=$(last_sw)
       say "GET RESPONSE (INS C0, ch$ch, Le=$le) SW: $c0sw"
       case "$c0sw" in
-        9000) RESULT_C0="ALLOCATED-CHANNEL-OK";;
+        *9000) RESULT_C0="ALLOCATED-CHANNEL-OK";;
         *) RESULT_C0="ALLOCATED-CHANNEL-FAIL($c0sw)";;
       esac
       ;;
@@ -159,6 +170,7 @@ for ch in $OPENED; do close_channel "$ch"; done
 
 say "=== VERDICT ==="
 say "C0: $RESULT_C0"
+say "hex-case: $RESULT_CASE"
 say "inline-FCI: $RESULT_FCI"
 say "leaked closes: $LEAKED (channels:$OPENED)"
 say "log: $LOG"
