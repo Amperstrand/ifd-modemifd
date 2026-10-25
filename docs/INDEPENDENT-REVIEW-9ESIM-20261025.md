@@ -685,6 +685,40 @@ field report (lpac + 9eSIM cards on Quectel works, but AT/QMI APDU is
 dead after reboot until "some attempts") sets the **post-switch
 settle-probe expectation for R3a**.
 
+### Offline R1 rehearsal — PREDICTION CONFIRMED (2026-10-25, this review)
+
+Full offline discrimination executed on the bench host (no router, no
+card): stock `a43e46ae` vs one-line uppercase-hexutil build, both x86,
+against `mock_modem.py --case-sensitive` (new fingerprint mode,
+committed) over a pty bridge. Wire captures on file
+(`/tmp/opencode/r1-{stock,upper}-*` + mock JSONL):
+
+- **Stock**: connect probes pass (`AT`, `AT+CSIM=?` → OK — refuting the
+  #447 mechanism in flight), MANAGE CHANNEL open `0070000001` →
+  `019000`, then ISD-R SELECT **lowercase** (`01a4040010a000…`) →
+  **bare `ERROR`** → `{"code":-1,"message":"euicc_init"}` — the bench
+  signature, reproduced with the mechanism visible on the wire.
+- **Uppercase build**: same open → SELECT **uppercase** →
+  `+CSIM: 16,"6F048402A0009000"` (**FCI answered, 9000**) → proceeds to
+  ES10 getEID STORE DATA (`82E2910006BF3E015A`-class) → mock (no E2
+  implementation) answers `6D00` → lpac segfaults in the ES10
+  error-parse path (upstream bug, observed and noted; real cards answer
+  STORE DATA, so the R1 live path should not hit it).
+- Response parsing is case-folding upstream (`input[i] | ' '`), so the
+  uppercase patch cannot break RX.
+
+Confidence change: the lowercase-rejection hypothesis moves from
+**Hypothesis** to **Strongly supported** (client-side chain fully
+demonstrated against a fingerprint-accurate mock; the remaining live
+unknown is only whether the real RG502Q parser behaves like the
+fingerprint — which is precisely what R1 on-router measures). The v4.0
+success (driver pcsc path, uppercase) and the bench ×3 failures
+(lowercase at the ISD-R SELECT, each failed run leaking its opened
+channel) are now reconciled by one mechanism with exhaustion as a
+secondary compounding effect.
+
+R1 on-router is now a *confirmation* run, not an exploration run.
+
 ### Version-lever assessment (2026-10-25, owner question)
 
 - **lpac**: the pinned `a43e46ae` **is upstream main** (verified: 0
