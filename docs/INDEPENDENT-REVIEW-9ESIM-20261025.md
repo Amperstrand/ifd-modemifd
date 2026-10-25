@@ -508,6 +508,55 @@ asked for GO.
   cheapens or redirects R3; R3 remains the strategic unlock.
 - Reopeners: none for the constraint itself; existing rows unchanged.
 
+### Ordering verdict reconciliation (2026-10-25, architecture lane + reviewer)
+
+The architecture lane adopted R1/R2/R4 unchanged and split R3:
+**R3a** = feed lpac (2.3.0, official OpenWrt packages, uqmi default
+backend) over the factory QMI composition (`usbnet=0`), uqmi already
+on the unit — the only exact-modem wire-proven transport class;
+**R3b** = the MBIM gate as fallback (dually-verified artifact,
+`SKIP_SLOT_MAPPING`). Reviewer verdict: **CONCUR with the split —
+with three amendments** (recorded, no dispute):
+
+1. **A1 — slot guidance corrected (must-fix).** The lane's caveat
+   "`LPAC_APDU_QMI_UIM_SLOT` defaults 1 → MUST set 2" is inverted for
+   this modem. Three independent sources agree: (i) wwand's exact-modem
+   measurement (2026-09-26): both physical slots map to **logical slot
+   1**; `SEND_APDU` on logical slot 2 is refused `NOT_SUPPORTED (94)`;
+   a channel "opened on slot 2" lands on the active card; (ii) lpac's
+   uqmi backend documents `UIM_SLOT` default `1`, 1-based; (iii) uqmi's
+   own `--uim-slot [1-2]` is per-command addressing, not a mapping
+   write. The eUICC is the **active** card (slot state verified in the
+   probe logs) → logical slot 1 → **leave the default**. Setting 2
+   aims at the refused logical slot. Note the hazard classes also
+   differ from MBIM: uqmi cannot write slot mappings, so a wrong value
+   fails loudly rather than switching cards.
+2. **A2 — "factory end-state, no second switch" needs one honest
+   caveat.** The unit's *current* baseline is ECM (`usbnet=1`) and the
+   tollgate WAN rides it. Ending at `usbnet=0` requires a one-time WAN
+   migration (netifd `proto qmi` + uqmi — both present on the unit) or
+   a switch back to ECM afterward. During the switch the ECM iface
+   disappears — the D5 failover/VLAN200 discipline applies to R3a
+   exactly as it did to the MBIM plan.
+3. **A3 — zero-cost client pre-check before any switch.** Verify the
+   installed uqmi's UIM APDU surface *before* touching composition
+   (help text needs no modem). Verified upstream this session: OpenWrt
+   uqmi `commands-uim.h` carries `uim-channel-open`, `uim-channel-close`,
+   `uim-apdu-send`, `--uim-slot [1-2]`; lpac upstream documents the
+   uqmi backend for OpenWrt (`docs/backends/qmi.md`).
+
+Supporting external record (this session): lpac packaged in official
+`openwrt/packages` (`utils/lpac`); feed TLS caveat confirmed
+(openwrt/packages#24963 — libcurl+mbedtls SM-DP+ incompatibility class;
+read-only ops unaffected, write-time wants the libcurl-openssl
+variant); MBIM-devices-vs-uqmi-backend mismatch reported
+(openwrt/packages#26232) — reinforces QMI-composition-for-uqmi pairing.
+Lane cross-cutting flags endorsed: mbedtls/TLS (above), the
+400 ms-vs-8 s CSIM pacing discrepancy to reconcile before interpreting
+R1 (v4.0 floor vs conwrt-bench #22 claim — different eras; R1's
+timestamped wire capture resolves it), and AT-port shuffle
+auto-detection (standing driver doctrine).
+
 ---
 
 ## G. Answers to the standing review questions
