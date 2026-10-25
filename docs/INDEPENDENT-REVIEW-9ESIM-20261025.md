@@ -746,6 +746,37 @@ no identifiers).
 
 R1 on-router is now a *confirmation* run, not an exploration run.
 
+### Readiness verification (2026-10-25, reviewer — all first-hand)
+
+Every load-bearing claim from the lanes' final deliveries was verified
+directly, not taken on report:
+
+- **Correction 4** on `findings/csim-session-state`: commits `8593e4a`
+  (+ fixup `aae7018`) pushed; matrix row carries the third annotation;
+  §8.6 "AT transports closed" marked no-longer-established.
+- **R1 discrimination artifact** `lpac-mt7621-atcsimUc-a43e46ae.tar.gz`
+  sha256 `fed4c6c1…4b6` — re-hashed on disk; extracted and
+  fingerprinted: `0123456789ABCDEF` present exactly once in
+  `libeuicc.so`, `at_expect_with_deadline` present in
+  `driver_apdu_at_csim.so` (PR#446 applied), absent from the wrong
+  objects.
+- **R3a artifact** `lpac-mt7621-uqmi-a43e46ae.tar.gz` sha256
+  `e5e04429…5d8` — re-hashed on disk.
+- **R2 battery**: `at_csim_c0_battery.sh` + `mock_c0_responder.py`
+  in-repo (commit `efddc55`) with the hex-case control cell and the
+  `*9000` verdict-glob fix; 3/3 rehearsal scenarios green (including
+  the harness's own PTY-echo bug found and fixed by that rehearsal).
+- **Three-way defect split** landed in the research doc (`b154855`) as
+  the reviewer required (close-refusal kept at independent-defect
+  status).
+
+**Position**: every offline-validatable element of the ladder is now
+validated and staged. The remaining unknowns — the live modem's hex-case
+behavior (R1), the `61 21`/`6A82` mechanisms (R2), uqmi-client on AACR
+(R3a), and MBIM-on-RG502Q (R3b) — are measurable only on the router,
+under lane discipline and owner gates. Upstream reports (#428 comment +
+segfault issue) drafted, owner-gated, sequenced after R1's live capture.
+
 ### Version-lever assessment (2026-10-25, owner question)
 
 - **lpac**: the pinned `a43e46ae` **is upstream main** (verified: 0
