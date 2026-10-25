@@ -26,6 +26,27 @@ Species-level record.
    APDU instability until settle (Quectel forum); Quectel RG50xQ AT manual —
    hardware reset recommended when CFUN resets misbehave.
 
+## The completed matrix (2026-10-25, firmware RG502QEAACR13A03M4G_ZYXEL)
+
+All three profile-switch mechanisms were live-tested, one wedge each — the
+differentiator is **not the refresh method**; it is this firmware's USIM
+re-initialization after ANY profile change:
+
+| Mechanism | Result |
+|---|---|
+| `CFUN=1,1` after enable | wedge #1 — modem left USB entirely; recovered only by 20 s physical cut |
+| gentle `CFUN 0→1` | wedge #2 — silent-but-on-bus; recovered by 20 s physical cut |
+| card-driven REFRESH (`lpac profile enable <iccid> 1`, zero host resets) | wedge #3 — silent-but-on-bus (enable itself returned `code:0`; evidence `0a681623…`) |
+
+Consequences: profile *switching* on this firmware generation is
+unreliable by every software path (the wedge is card-safe and
+power-cut-recoverable — a viable absorb-it runbook posture exists when a
+switch is unavoidable); reliable switching requires the firmware track
+(field-proven 13A04 path — separate owner research). Daily data stability
+between switches is unaffected. The ladder below still governs: rung 0
+remains correct (it verified the profile first and asked nothing of the
+modem); rungs exist for the no-switch refresh cases.
+
 ## The ladder (post profile enable/disable — run in this order)
 
 | Rung | Action | Notes |

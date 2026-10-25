@@ -12,7 +12,7 @@ one-shot window runs on.
 
 | # | Gate | Status / owner |
 |---|---|---|
-| G1 | T-B complete and recorded (known-good §8): enable + speed test + rollback verified, operational profile re-enabled and registering, notification queue emptied | executing lane (pending) |
+| G1 | T-B complete and recorded (known-good §8): enable + rollback verified (the speed-test measurement itself was attempted three ways and is blocked on modem firmware — see the wedge matrix in MODEM-REFRESH-POLICY and tb3 evidence 0a681623); operational profile re-enabled and registering (QCCID+CEREG verified); notification queue emptied (rc=0). CLOSED 2026-10-25 — record: known-good §8 + 379044d; refreshFlag rehearsal landed post-closure (wedge #3, archived) | executing lane (CLOSED) |
 | G2 | **Reissue policy answered**: owner confirms with silent.link whether a failed download yields a fresh matching-id. This single answer sets the retry posture of the whole window | **owner** |
 | G3 | TLS evidence: **earned** — T-A's live download through the Gate-2 openssl-libcurl build against the truphone endpoint (the documented #24963 failure class) is the router-side proof; no further router precheck exists or is needed (router has no curl; host-side bench chain verified CI1-rooted) | closed |
 | G4 | Notification queue empty at window open (G1's `notification process -a` closes it; a T-A-class install re-queues one per download, processed in-window) | executing lane |
