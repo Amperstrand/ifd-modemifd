@@ -123,6 +123,23 @@ unaffected (its arguments — pacing, BPP lineage, the ES10-error-path
 segfault — are independent of this result). Species-level: card identity
 values live in the lane record, not here.
 
+**Correction entry 6 (T-A review finding, live evidence): the
+MANAGE-CHANNEL close-refusal was a THIRD probe artifact — the defect model
+collapses to one real defect.** The bench closes used the 4-byte form
+(`AT+CSIM=8,"0070800n"`): under TS 27.007 the declared length (8 hex
+chars = 4 bytes) mismatches the command, which needs the P3 byte — the
+5-byte form (`AT+CSIM=10,"0070800200"`). lpac's own session closes use
+exactly that 5-byte form and the T-A captures show it answered **`9000`
+twice** (profile-list and notification-list tails; archived in
+`ta-artifacts.tar.gz`, sha256 `3eb690b7…`). The "independent firmware
+defect" of the three-way split RETIRES. Final defect model: **one real
+defect** (client-side lowercase hex, fixed in Gate-2/atcsimUC) plus three
+probe artifacts (INS `2C`; CLA provenance; 4-byte close). The modem and
+card were compliant on every count — the only genuine modem-side
+fragilities are the reset-wedge classes recorded in the incident record
+(`CFUN=1,1`-class and silent-but-on-bus), which are reset-path issues, not
+channel-handling issues.
+
 What the evidence now supports (INS-independent survivors only):
 - MANAGE CHANNEL opens allocate (02/03) — real; closes are AT-refused — real
   (open-leak → `6A81` exhaustion, all rounds).
