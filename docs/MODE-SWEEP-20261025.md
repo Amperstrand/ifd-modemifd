@@ -45,6 +45,20 @@ composition flip is a cold reset — budget ≈ 4 resets + reboots,
 wedge recovery standing by (owner's hand). Lane lock per phase;
 artifacts-before-power-cuts; tollgate on VLAN200 during switch windows.
 
+## Controls & constraints (updated 2026-10-25 late)
+
+- **Firewall offload is a mandatory recorded variable** (pH catch, from
+  the gist's MT7621 note): routed throughput is single-core-ksoftirqd-
+  capped and roughly doubles with `flow_offloading` (+hw where
+  available). Every phase measures BOTH offload states; comparisons
+  quote the state.
+- **Op budget** (vendor RM502Q datum: <=30 power/CFUN/SIM/NVM-class ops
+  per day): ~12-15 consumed today; the sweep's ~4 cold resets fit but
+  the sweep is the **last reset-heavy activity today**.
+- **Boot-wedge class**: a flipped-card boot can wedge (wedge #4 was
+  exactly this, post-cut-#4 landing); recovery cuts may need one extra
+  attempt. Planned, not incident.
+
 ## Output
 
 §12 of the known-good doc: the measured table (per mode: down/up best,
