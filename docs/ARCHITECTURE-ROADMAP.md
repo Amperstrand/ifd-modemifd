@@ -128,3 +128,27 @@ Species-level record, same policy as `CSIM-SESSION-FINDINGS.md`.
 | OmniKey external-reader fallback | Staged but never exercised end-to-end (dry-run reached the reader with the correct no-card error) | Last-resort only; a rehearsal with a sacrificial card is cheap insurance if the fallback ever becomes primary |
 | `APDU_decrypt` semantics | Only unmeasured AT knob; could in principle open raw APDU access | Quectel ticket; excluded from any window |
 | pcscd-side ~2-min post-restart transmit dead window (ccid-firmware-rs TRANSMIT_DEAD_WINDOW.md) | Blocks any vpcd-based reader from fast recovery after pcscd restart | Open upstream-of-patch issue; pcscd-host-stack lane owns it |
+
+## Appendix: Option F spike protocol (wwand on the NR7101 — lab-window scope)
+
+Goal: decide C-vs-F with measured facts, not README claims. **Sacrificial-unit
+discipline: never the 9eSIM unit, never the 9eSIM card.**
+
+- **Phase 0 (prep, no router state change):** add the ddimension feed (25.12,
+  mipsel_24kc — the exact target); `opkg update` only; record package set and
+  versions (`wwand`, `wwand-qmi`, `wwand-esim` incl. bundled lpac).
+- **Phase 1 (data-path, lab unit, lane lock):** install `wwand-qmi` only;
+  move the wwan interface to `proto wwand`; verify data connection, signal and
+  registration parity against the uqmi baseline; record cdc-wdm ownership
+  behavior (single-open; who holds it).
+- **Phase 2 (eSIM, sacrificial eUICC only):** install `wwand-esim`; `ubus`
+  esim status/profiles against a sacrificial card; verify ES10c read and
+  enable/disable round-trip; probe for the RG650E-class ES10c-write refusal
+  quirk on this firmware.
+- **Phase 3 (decision matrix vs Option C):** deploy complexity (feed package
+  vs custom agent + patched driver + nightly MIPS toolchain); PC/SC-any-app
+  need (wwand has none — is that requirement real?); maintenance (active
+  upstream vs in-house Rust); security surface (root ucode daemon vs minimal
+  agent); failure modes under router restart.
+- **Gates:** lane lock held; VLAN200/tollgate unaffected; rollback =
+  `opkg remove` + proto restore; timebox one lab day + writeup.
