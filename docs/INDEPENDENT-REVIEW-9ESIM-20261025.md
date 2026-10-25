@@ -451,6 +451,21 @@ surprise on the chosen path (covered by Gate 1) > composition wedge
 rollback; not one-shot) > post-enable registration (rollback to prior
 profile documented).
 
+### Ownership assignment (2026-10-25, owner-directed coordination)
+
+| Role | Lane | Status |
+|---|---|---|
+| Artifacts + checklist (Gate-2 build: pin + #452 @ `18c1b7d` on `route1-tls452` + minimal upstream-reportable segfault fix; T-A/T-B checklist phases) | w19:pK | ACCEPTED within timebox; mipsel SDK build in flight; #459-Criterion configure quirk handled in wrapper; mock dry-run evidence to be attached atcsimUC-style |
+| Window execution (Gate-1 read-only → T-A → T-B, lane lock, per-phase owner GO) | w19:pH | Accepted **by action**: atcsimUC deployed to a disjoint tree (`/tmp/ucroot` + `LD_LIBRARY_PATH` — resolves the deployment-order requirement D without overlay ordering), UC fingerprints verified **on-router**, private expectations set (`EXPECTED_QCCID`/`EXPECTED_SLOT=2`), read-only window running under lane lock `window-arch-r1r2` |
+| Gate review between phases | w19:pJ | standing |
+
+Notes: (1) Gate-1 execution is covered by the owner's standing read-only
+milestone directive; **T-A/T-B remain write-gated**. (2) pH flagged
+2.9 MB overlay free — sufficient for the read-only rungs; package
+installs for later phases need cleanup first. (3) pK's commit semantic:
+Gate-2 build exists before T-A. (4) Owner-side item in parallel:
+silent.link reissue policy.
+
 ### Owner directive (2026-10-25): test profiles FIRST
 
 The rehearsal download is promoted from recommendation to plan of
