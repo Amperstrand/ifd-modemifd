@@ -54,6 +54,15 @@ linked). Stock feed lpac is NOT used for any write rung.
 
 ## T-A. Rehearsal download — Speedtest test profile (owner-approved)
 
+> **EXECUTED 2026-10-25 (pH, artifact b587d46f, review in flight at press
+> time): SUCCESS** — BetterRoaming/Speedtest profile (ICCID `8944…355F`)
+> downloaded in **24 s** over AT+CSIM, TLS-verified, 1032-line wire capture,
+> nadanada untouched+enabled, 3 notifications pending, artifacts archived
+> (`3eb690b7`). Consequences for §E: **ECP3 install latency over unpaced
+> at_csim is now MEASURED** (24 s, zero transport errors — mid-range of the
+> 26 s/89 s reference class, no thrash observed under a real session); the
+> Idemia-endpoint unknown remains (truphone-class exercised instead).
+
 Free, diagnosable, retryable; validates the ENTIRE write path (AT transport
 + TLS leg + BPP install + notification) on the card that just declared
 `testProfileSupport`.
