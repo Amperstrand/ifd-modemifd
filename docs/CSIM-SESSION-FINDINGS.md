@@ -102,6 +102,20 @@ RESPONSE never works" is retired with instruments, not argument. (3)
 archived `6A82` row was the CLA-provenance artifact (correction 3),
 not modem behavior. (4) **Channel-close refusal stands** (4/4 AT-ERROR
 this window) — the independent firmware defect of the three-way split.
+**Per-run attribution (reviewer note, folded):** the window comprised two
+script invocations under the one lane lock (`window-arch-r1r2`) — **run 1**
+(10:12Z, `/tmp/onrouter-readonly-20261025T101038Z`) carried the R2 battery
+verdicts (C0 `ALLOCATED-CHANNEL-OK`, hex-case `LOWERCASE-REJECTED`, the
+FCI bytes, the `61 21` inline-FCI result, the 4/4 close-refusal tally;
+its R1a/R1b cells were exit-127 pre-deployment — no `timeout` applet on
+stock OpenWrt). **Run 2** (10:18Z, `…T101804Z`) carried the real R1a
+(lowercase `ERROR` fingerprint, exit 255) and R1b (uppercase, exit 0, full
+JSON); its R2 cell was rung-deselected (`RUNGS=r1a r1b`) — the deployed
+script revision mislabeled that skip as "battery not found" (cosmetic,
+fixed same day). Router `/tmp` is volatile: both dirs are archived
+lane-side with the host-side transcripts
+(`~/.esim-reseller/…/evidence/gate1-20261025/`,
+`router-artifacts.tar.gz` sha256 `780af30d…`).
 Net: **the enabled-profile session-state mechanism is RETIRED**; with
 uppercase emission and correctly-encoded APDUs, a complete LPA session
 runs over AT+CSIM on this firmware. Write-window transport ranking is
