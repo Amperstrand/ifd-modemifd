@@ -122,12 +122,49 @@ traffic).
 - Free NVM after install: verified sufficient at gate time
   (pre-install reading 409,335 B class).
 
-## 8. T-B (pending section — to be appended on execution)
+## 8. T-B — executed 2026-10-25: enable ✅, incident, rollback ✅; measurement deferred (executing lane's record)
 
-Enable → speed test → rollback → verify, under the five binding
-conditions (live failover check, pre-staged rollback one-liner,
-time-boxed supervised session, full post-verification, default-stop).
-Results and wire captures to be recorded here by the executing lane.
+**Execution 1 (19:11Z, lane-locked, conditions verified):**
+notifications `process -a` (nadanada-era acks cleared; one straggler — see
+below) → **enable-by-ICCID SUCCESS** (`code:0`) → the staged post-enable
+refresh (`CFUN=1,1`) **wedged the modem off the USB bus** (zero attach
+events; unresponsive to host reboot, RESET_N 1/3/30 s, a register-verified
+30 s power-rail cut via `tools/gpiopoke`, and the PWRKEY force sequence).
+Recovery: a 20-second **physical** power cut — strictly stronger than the
+load-switch rail cycle because it drops VBUS with every rail (reviewer
+physics, confirmed empirically). Post-recovery: **rollback COMPLETE and
+verified** — `enable 89353082711108402322` by ICCID, gentle `CFUN 0→1`
+refresh (USB stack stayed up — the prevention held), QCCID = nadanada live,
+CEREG registered (roaming), notifications cleared (`rc=0`), VLAN200
+tollgate verified, `usb0` data session up. Card state after: **nadanada
+enabled+active, BetterRoaming present+disabled, nothing deleted** —
+§7's known-good state restored exactly.
+
+**Execution 2 (measurement re-attempt, ~19:55Z):** both enable attempts
+failed `euicc_init` **before any card write** (card unchanged, verified) —
+the RM551-class post-profile-operation APDU-surface instability; the
+gentle-refresh variant then wedged the modem into the *silent-but-on-bus*
+state. Both reset signatures now observed on this firmware. DEFAULT-STOP
+executed; recovery = the proven power cut; **measurement deferred** — it
+requires the non-reset refresh tooling (refreshFlag-driven enable, or QMI
+UIM slot power-cycle behind a cdc-wdm composition), not more resets on an
+exhausted modem.
+
+**Wire drift vs §6:** the 5-byte-close `9000` fingerprint held throughout;
+new observations for the record — the AT-port shuffle now twice
+(ttyUSB2→3→2, functional-port detection must probe `AT+CPIN?`, not bare
+`AT`: several ports echo `OK` to bare `AT`); `euicc_init`-class client
+failures in post-profile-operation windows (transient, settle-dependent);
+and the two wedge classes. The seq-2 notification straggler's primary
+artifacts were lost to the power cut's tmpfs wipe (recorded as a process
+lesson: pull artifacts before requesting power cuts); the queue was
+cleared cleanly in the final cycle (`rc=0`).
+
+**Refresh policy (now encoded law):** refreshFlag-driven enable first
+(card drives the modem), QMI UIM power-cycle second, `CFUN 0→1` third with
+settle-wait and functional port re-detection; `CFUN=1,1` forbidden after
+profile operations. Recovery instrument: `tools/gpiopoke` + the 20-second
+physical cut (both proven).
 
 ## 9. Reproduction checklist (condensed)
 
