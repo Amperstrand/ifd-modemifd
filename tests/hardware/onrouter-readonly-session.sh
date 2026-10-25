@@ -113,8 +113,13 @@ grep -m3 -i -E 'error|fail' "$DIR/r1a-chipinfo.atdebug" || true
 # ---------- R1b: atcsimUC (uppercase + #446), same gate ----------
 cfun_recycle
 say "-- R1b: atcsimUC chip info (AT_DEBUG on) --"
-AT_DEBUG=1 LPAC_APDU=at_csim LPAC_APDU_AT_DEVICE="$TTY" timeout 120 "$LPAC_UC" chip info \
-  > "$DIR/r1b-chipinfo.out" 2> "$DIR/r1b-chipinfo.atdebug"
+if [ -n "${LPAC_UC_ENV:-}" ]; then
+  AT_DEBUG=1 LPAC_APDU=at_csim LPAC_APDU_AT_DEVICE="$TTY" timeout 120 env $LPAC_UC_ENV "$LPAC_UC" chip info \
+    > "$DIR/r1b-chipinfo.out" 2> "$DIR/r1b-chipinfo.atdebug"
+else
+  AT_DEBUG=1 LPAC_APDU=at_csim LPAC_APDU_AT_DEVICE="$TTY" timeout 120 "$LPAC_UC" chip info \
+    > "$DIR/r1b-chipinfo.out" 2> "$DIR/r1b-chipinfo.atdebug"
+fi
 r1b=$?
 say "R1b exit=$r1b (checklist 2: EID printed? die-after-ES10-JSON = segfault caveat, not transport)"
 EIDLINE=$(grep -o '"eid"[: ]*"[0-9A-Fa-f]\{32\}"' "$DIR/r1b-chipinfo.out" | head -1)
