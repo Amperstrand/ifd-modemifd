@@ -414,6 +414,46 @@ asked for GO.
 **Verdict**: the window is **NO-GO until D2, D4, D5, D6 are closed**
 (all closable without touching the card); then owner GO/NO-GO decides.
 
+### Provisioning-readiness verdict (2026-10-25, owner question: "are we
+ready — one shot")
+
+**Not yet — by design.** Three gates stand between today and the
+one-shot, none touching the credential:
+
+- **Gate 1 — the read-only window** (R1a/R1b/R2 + R-½; staged,
+  runbook-ready). Its outcome selects the provisioning path: an
+  AT-revival (R1b EID) means no composition switch at all; otherwise
+  Route-1 QMI composition (uqmi artifact) with MBIM fallback.
+- **Gate 2 — the hardened download artifact**: pin + #452 (TLS
+  verification ON, GSMA-augmented trust store) **+ a fix for the
+  post-error segfault** — a crash on a mid-download card-error SW would
+  skip lpac's cancel-session and leave server-side state dangling with
+  the matching-id consumed: precisely the wrong bug to meet during the
+  one-shot. One build, fingerprinted like atcsimUC.
+- **Gate 3 — a reusable-credential rehearsal download** (strongly
+  recommended, owner-gated write): freely-downloadable test profiles
+  exist (osmocom eUICC manual "Known Test Profiles": BetterRoaming /
+  Speedtest via `rsp.truphone.com`, "any number of times … to any
+  number of eUICCs", valid for GSMA-Live-CI cards such as the 9eSIM —
+  verified this session). One test download through the exact window
+  machinery (same build, same transport, same TLS leg, full BPP
+  install + notification cycle, then `profile delete` cleanup after
+  free-NVM gate) converts the real download from *first full exercise
+  of every component* into a *repeat*. This is the single highest-value
+  remaining de-risk and the direct answer to the one-shot constraint.
+
+One-shot-specific failure ranking (post-gates): mid-download
+HTTP/BPP stall with partial install > credential-reissuance policy
+unknown (owner-side: confirm silent.link reissue terms BEFORE the
+window — if reissuable, the pressure drops materially) > transport
+surprise on the chosen path (covered by Gate 1) > composition wedge
+(recovery documented; card untouched) > enable-phase quirks (ladder +
+rollback; not one-shot) > post-enable registration (rollback to prior
+profile documented).
+
+Everything else is saturated: further transport research has
+diminishing returns against running the staged windows.
+
 ---
 
 ## E. Recommended phased roadmap
