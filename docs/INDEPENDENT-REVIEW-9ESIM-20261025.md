@@ -528,7 +528,27 @@ page, verified this session): stage verbatim in the private runbook
 T-A — only the silent.link one-shot requires private credential
 staging.
 
+### Gate-2 build (w19:pK, `route1-gate2`) — spec applied in time; reviewer-verified elements (2026-10-25)
+
+The urgent spec amendment (atcsimUC-base) landed while the mipsel SDK
+was still fetching. Commit stack: pin → uppercase (`1982d5e`) → #446
+(`2c65cf6`) → #452 (`da047ad`) → segfix-zero-init (`d68be3b`). Verified
+first-hand by this review: the x86 pre-verification build carries the
+uppercase table in `libeuicc.so` and the `LPAC_HTTP_SSL_VERIFY` marker
+in `driver_http_curl.so`; the gdb capture (`segfix/gdb3.log`) confirms
+the segfault root cause — `SIGSEGV in __libc_free(mem=0x3)` inside
+`es10c_ex_euiccinfo2_free` — i.e. teardown walking **uninitialized
+`_cleanup_` locals** (11 across 8 applet files) when an ES10 call fails
+early; the fix is mechanical zero-init with no success-path change.
+This completes the upstream-report content (the two owner-gated
+artifacts now have full root-cause + reproducer material). mipsel build
+in flight (daemon-owned after a reaped-process-group hazard killed two
+attempts); fingerprint + sha256 handoff to pH on landing. Preflight doc
+amended (`ccad88b`): AT-pivot (composition switch demoted to annex G),
+T-A/T-B phases, card facts, TLS-validation datum, reissuance note.
+
 ### Owner directive (2026-10-25): test profiles FIRST
+
 
 
 The rehearsal download is promoted from recommendation to plan of
