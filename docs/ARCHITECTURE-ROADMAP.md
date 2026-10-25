@@ -71,7 +71,48 @@ silent.link write-window recommendation) supersedes the ordering in
 > deleted**; post-enable refresh per transport (uqmi power-cycle / CFUN
 > recycle); verify = EID ×3 + profile list + registration + tollgate.
 
-Species-level record, same policy as `CSIM-SESSION-FINDINGS.md`.
+ Species-level record, same policy as `CSIM-SESSION-FINDINGS.md`.
+
+## Current position (2026-10-25 evening) & next actions
+
+**Owner constraints (final):** no external card reader at any point; the card
+stays seated in the NR7101; the active milestone is **read-only operations
+on the 9eSIM from tooling compiled and installed on the NR7101 alone**
+(AT or pcscd/lpac on-router both in scope).
+
+**Where every line of work stands:**
+
+| Line | State |
+|---|---|
+| CSIM findings | Corrections 3 (probe defects) and 4 (lowercase-hex, three-way defect split) landed and closed across all artifacts — the "AT transports dead" claim is retired; bench history explained as three independent defects (case-rejection client-side *primary*, mock-confirmed offline; close-refusal = firmware defect; exhaustion downstream) |
+| On-router read-only ladder | R0/R1a/R1b/R2 encoded in `tests/hardware/onrouter-readonly-session.sh` (reviewer-amended, `08cba9c` A–E applied); R3a/R3b owner-gated; R4 goal-gated; R½ approved with guards |
+| Artifacts | Four, all forensically verified: stock `a43e46ae` at_csim, `fed4c6c1` atcsimUC (uppercase + #446, binary-fingerprinted), `e5e04429` uqmi (pinned), `19d6f87d` mbim30 (fallback) |
+| Instruments | C0 battery rehearsed 3/3 against the landed mock; runner (`rehearse_c0_battery.py`) makes the evidence regenerable |
+| Offline validation | **Exhausted** (reviewer concurrence `cbcaf69`); the router window is the only remaining evidence source |
+| Write window | Transport ranking proposed (`e7cd7ad`, above) — **owner verdict pending**; graduated-write discipline folded |
+| PR #30 | Findings + disposition memo on the thread; parked pending issue #32's live result and the C-vs-F decision |
+
+**Next actions, in order:**
+
+1. **Owner GO: one read-only hardware window** (~1 h, lane lock, zero
+   credential risk): run `tests/hardware/onrouter-readonly-session.sh` with
+   `EXPECTED_QCCID`/`EXPECTED_SLOT` set from the runbook values. Outcomes
+   are pre-registered: R1a captures the lowercase-ERROR fingerprint (or
+   not); R1b reaching FCI→EID meets the milestone with **zero composition
+   switch** and confirms the case mechanism live; R2 decides the
+   `61 21`/`6A82` mechanism question. Segfault-after-ES10-JSON = known
+   upstream caveat, not transport.
+2. **Owner rules on the write-window transport ranking** (`e7cd7ad`) using
+   the window's evidence (if R1b succeeds, the AT-vs-uqmi calculus shifts
+   for reads but the ranking's write-side arguments — pacing, segfault
+   placement, BPP lineage — stand).
+3. **Upstream filings after R1's live capture** (owner-gated, drafted):
+   the #428 uppercase comment and the post-error segfault issue.
+4. **Fold results** into this roadmap + the options doc; re-run the PR #30
+   disposition if R2 changes the CSIM picture; revisit C-vs-F after the
+   write completes.
+
+
 
 ## Decision summary
 
