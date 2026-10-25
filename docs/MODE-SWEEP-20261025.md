@@ -14,13 +14,22 @@ known-good §10/§11.
 - Tool: `iperf3 3.16` (host). Bounded quick-pass per mode: 2×10 s down,
   2×10 s up against a public iperf3 server, best-of recorded.
   Optional canonical pass: Ookla CLI on sponsored data (see budget).
-- Data budget (owner to confirm, default in brackets): bounded
-  quick-pass ≈ 300 MB/mode → ~1.2 GB total worst case, **through the
-  active operational profile** [default: proceed]. Alternative: enable
-  the Speedtest Travel profile first (sponsored data) at the cost of
-  two planned profile-ops (wedge-expected + 20 s cuts).
+- Data budget (OWNER DECIDED 2026-10-25): **all measurement traffic
+  rides the Speedtest Travel profile** (sponsored test data; owner:
+  "use whatever amount you think is appropriate" — bounded quick-pass
+  ≈ 300 MB/mode, ~1.2 GB total worst case, kept out of respect for the
+  free allowance). **No measurement traffic through the operational
+  profile or the silent.link credential.** Consequence: the sweep is
+  bracketed by two PLANNED profile-ops — enable Speedtest first
+  (rung-0 refreshFlag per doctrine; wedge-expected; owner's 20 s cut
+  standing by), rollback to the operational profile at the end (same).
+  All four modes measure on the same profile = controlled variable.
 
-## Phases (each: switch → WAN verify → settle → measure → record)
+## Phases
+
+| Phase 0 | Enable Speedtest profile (rung-0, wedge-expected, planned cut) → verify registration |
+
+(each switch phase: switch → WAN verify → settle → measure → record)
 
 | Phase | Mode | Change required |
 |---|---|---|
