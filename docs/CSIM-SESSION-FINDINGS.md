@@ -219,4 +219,12 @@ targeting the eUICC in a secondary slot MUST set it explicitly, or it
 silently addresses the wrong card); MBIM command timeouts are 15 s open /
 10 s per command / 20 s close (no short-timeout hazard for BPP-class
 installs; hung APDUs fail loudly rather than wedging); disconnect closes
-the APDU channel explicitly (no logical-channel leak).
+the APDU channel explicitly (no logical-channel leak). Timeout margin: the
+window artifact raises the per-command timeout 10 s → 30 s (one-line patch,
+build-script-baked) — every *measured* APDU class on this card family is
+sub-second (p99 ≈ 400 ms), but the eUICC final-install single-APDU duration
+is unmeasured and an independent implementer of the same transport chose
+30 s; on a one-shot profile download the false-failure cost exceeds the
+slower-hang-detection cost. Pair integrity of the two artifacts is
+self-verified (only the patched driver plus a non-runtime archive-metadata
+delta differ; all linked artifacts byte-identical).
