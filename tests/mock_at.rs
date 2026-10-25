@@ -435,10 +435,20 @@ fn control_get_feature_request_advertises_zero_features() {
 
 #[test]
 fn control_rejects_all_non_feature_ioctls() {
-    // 0x42000D49 = SCARD_CTL_CODE(3401) (TLV properties),
-    // 0x42001248 = SCARD_CTL_CODE(4680) (vendor escape range),
-    // plus arbitrary/zero codes.
-    for code in [0u64, 1, 0x4200_0D49, 0x4200_1248, 0x0800_1234, 0xDEAD_BEEF] {
+    // 0x42000001 = SCARD_CTL_CODE(1), empirically the escape channel
+    // clients actually use on this pcscd/ccid bench (ACR1252 recovery
+    // datapoint, 2026-10-25); 0x42000D49 = CTL_CODE(3401) (TLV
+    // properties), 0x42001248 = CTL_CODE(4680) (vendor range), plus
+    // arbitrary/zero codes.
+    for code in [
+        0u64,
+        1,
+        0x4200_0001,
+        0x4200_0D49,
+        0x4200_1248,
+        0x0800_1234,
+        0xDEAD_BEEF,
+    ] {
         let mut rx = [0u8; 16];
         let mut returned: c_ulong = 99;
         let rc = unsafe {
