@@ -557,6 +557,78 @@ R1 (v4.0 floor vs conwrt-bench #22 claim — different eras; R1's
 timestamped wire capture resolves it), and AT-port shuffle
 auto-detection (standing driver doctrine).
 
+### R-½ QUIMSLOT rehearsal cycle — reviewer sign-off (2026-10-25)
+
+**APPROVED — safe class, with mandatory guards.** Basis: `AT+QUIMSLOT`
+is documented, NVM-persisted, reset-applied, and is NOT the
+`QESIM lpa_enable` do-not-toggle wedge class; the original probe script
+v2 already implemented a sanctioned switch cycle with abort-safe
+restore (it fired no switch only because the slot already read 2).
+Switching de-powers the inactive slot's card — the production eUICC is
+card-content-untouched and *structurally unreachable* for the whole
+rehearsal, which is a safety feature, not a risk. Restore is one
+command + reset.
+
+Mandatory guards:
+
+1. **ICCID-verify before any op**: after the switch, `QCCID` must match
+   the slot-1 test USIM. ABORT if the eUICC's ICCID appears — the
+   rehearsal must never run against the production card.
+2. **Restore discipline**: trap-based restore guard + explicit restore
+   + post-restore verification (`QUIMSLOT?` = eUICC slot, `QCCID` =
+   eUICC ICCID, `CPIN: READY`). NVM persistence means restore is
+   mandatory even after an unexpected reboot.
+3. Tollgate failover (VLAN200) confirmed before start — the two modem
+   resets bounce the WAN (~2 min class, twice).
+4. modem-lane lock + heartbeats throughout.
+5. Class-A read-only op set only (open / SELECT / read / close — the
+   `validate-sacrificial.sh` shape); no QESIM/QSIMCFG toggles while on
+   slot 1; pre-declared command list.
+6. Budget: two resets total; abort on double re-enumeration failure.
+
+Extra value: the cycle rehearses the USB re-enumeration handling that
+R3a's composition reboot needs, one rung earlier. Reviewer concurs
+with the lane's framing: the rehearsal is comfort, not safety — if
+declined, the ladder runs R1→R4 directly with every rung read-only.
+
+### Fork-ecosystem findings (owner question, 2026-10-25)
+
+- **`fildunsky/lpac-build`** (active 2026-09; targets incl. our exact
+  `ramips/mt7621 mipsel_24kc`, OpenWrt 25.12 apk): packaging for a
+  patched lpac 2.3.x ("FM350 eSIM via native AT driver"). Two material
+  findings:
+  1. **Curated open AT-driver PRs absent from our pin**: estkme lpac
+     #446 (bounded poll deadlines in `at_expect`), #447 (tolerate
+     *silent* AT capability probes), #448 (bounded CGLA/CCHC deadlines
+     for profile download) are all OPEN upstream — verified this
+     session — so `a43e46ae` (= main) lacks them. #447 matches a
+     documented RG502Q behavior (AT test commands answer bare OK, or
+     stay silent, per the driver README) and is a plausible direct,
+     client-side cause of the `euicc_init` ×3 failures — a competitor
+     to the channel-exhaustion hypothesis. **R1 amendment**: run the
+     discrimination with two builds — stock `a43e46ae` and
+     main+#446/#447 — a client-side fix flipping init to success would
+     re-rank the whole AT path without touching the card.
+  2. **libqmi tension**: their README states native QMI (+MBIM)
+     cross-builds cleanly on 25.12 with feed glib2 deps — in tension
+     with our verified compiled-out UIM headers (SDK staging, libqmi
+     1.36.0). Possible resolution: the lane's staged libqmi may be a
+     reduced configuration vs the feed binary package. Cheap re-check
+     for the lane: inspect the *feed binary* package's headers (not
+     the SDK-staged copy). If the feed binary carries UIM APIs, the
+     native `qmi` backend revives as a fallback class (uqmi stays
+     first: zero artifacts). Version floor noted: lpac qmi driver
+     needs qmi-glib ≥ 1.35.5 (1.36.0 satisfies).
+- **`pipe/lpac-quectel`** (2024-07, stale): stock README; fork value is
+  historical only — its Quectel AT workarounds predate the at_csim
+  backend era. Not actionable.
+- **Same-family corroboration for R3a**: Khadas-forum RM500Q-GL eSIM
+  on Linux — works in QMI usbnet composition with a QMI-aware option
+  driver ("only works in usbnet mode"); modem-firmware sensitivity
+  noted by the reporter. Consistent with our QMI-composition-first
+  ordering; another data point against assuming firmware-generation
+  uniformity.
+
 ### Version-lever assessment (2026-10-25, owner question)
 
 - **lpac**: the pinned `a43e46ae` **is upstream main** (verified: 0
