@@ -480,15 +480,21 @@ Verified from the host-side captures (`window-run.log` 10:12 run,
   AT+CSIM with the operational profile ENABLED** — a full LPA session
   (open → ISD-R select → ES10 reads) on the production card, on-router.
   **"Enabled profile blocks CSIM LPA sessions" is CONTRADICTED.**
-- **R2 battery (run 1; run 2 SKIPped on a missing battery path —
-  evidence attribution corrected from the merged report)**:
-  `C0: ALLOCATED-CHANNEL-OK` and `hex-case: LOWERCASE-REJECTED(ERROR)` —
-  GET RESPONSE on properly-allocated channels returns data-bearing
-  success; "GET RESPONSE never works" is **retired**. The precise FCI
-  bytes (6F1F …), the inline-FCI `61 21` on a properly-addressed
-  channel, and close-refusal 4/4 are router-side artifacts (lane to
-  fold into correction 5) — reported and consistent with all prior
-  evidence; FCI content not yet re-verified host-side.
+- **R2 battery (run 1; run 2 SKIPped — later diagnosed as a cosmetic
+  message bug, rung deselected by the deployed revision; fixed
+  `dd6cddd`; evidence attribution corrected from the merged report and
+  now folded lane-side as correction 5 `b535fa0`)**: verified
+  **host-side from the preserved router artifacts** (`gate1-20261025/
+  router-artifacts.tar.gz`, sha256 `780af30d…a221`, re-hashed and
+  extracted by this review):
+  - `AT+CSIM=10,"02C0000021"` (CLA=02, **INS C0**) →
+    `+CSIM: 70,"6F1F8410<AID>A504…9000"` — **the real ISD-R FCI**,
+    on channel 2 and channel 3, deterministic across gap variants.
+    "GET RESPONSE never works" is **retired with byte-level evidence**.
+  - Inline-FCI SELECT (P2=00, Le=00) on a properly-addressed channel →
+    `6121` — the historical `6A82` is confirmed as the CLA-provenance
+    artifact.
+  - `leaked closes: 4 (channels: 2 3)` — close-refusal tally verified.
 - Card facts (private logs only): EID matches census; free NVM
   409,335 B; `rspCapability: additionalProfile, testProfileSupport`
   (T-A/T-B card-supported); CI PKID for verification/signing = RSP2
@@ -510,6 +516,17 @@ case-bug was the blocker); Q3 answered — lowercase rejection, confirmed
 live; Q4/Q5 mooted for provisioning (QMI remains long-term reader
 option); Q9 superseded — safest path today is the proven AT transport
 + hardened Gate-2 build.
+
+Additional record items (2026-10-25, post-Gate-1): run-1's exit-127s
+cause-named (no `timeout` applet on stock OpenWrt → the session
+script's `run_to()` watchdog fix, `7a426a9`); pH's execution ownership
+ACCEPT is formal and standing; T-A activation-code prerequisite
+**resolved — the Speedtest credential is public**
+(`LPA:1$rsp.truphone.com$QRF-SPEEDTEST`, osmocom Known-Test-Profiles
+page, verified this session): stage verbatim in the private runbook
+(single-quote discipline); no owner-side acquisition path exists for
+T-A — only the silent.link one-shot requires private credential
+staging.
 
 ### Owner directive (2026-10-25): test profiles FIRST
 
