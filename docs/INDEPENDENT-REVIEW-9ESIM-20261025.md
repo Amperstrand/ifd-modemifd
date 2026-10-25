@@ -557,6 +557,29 @@ R1 (v4.0 floor vs conwrt-bench #22 claim — different eras; R1's
 timestamped wire capture resolves it), and AT-port shuffle
 auto-detection (standing driver doctrine).
 
+### Version-lever assessment (2026-10-25, owner question)
+
+- **lpac**: the pinned `a43e46ae` **is upstream main** (verified: 0
+  commits ahead; latest release v2.3.0). Custom builds differ only in
+  backend selection/timeout patch. Nothing newer exists to adopt.
+- **uqmi**: feed binary carries the required UIM APDU surface
+  (`commands-uim.h` verified); A3's zero-cost help-text pre-check
+  confirms the installed binary. No upgrade needed for the milestone.
+- **libqmi**: feed 1.36.0 lacks UIM APDU; a self-built newer/fully
+  configured libqmi would unlock lpac's in-process `qmi` backend — a
+  future driver-class option, not needed while the uqmi backend covers
+  read-only ops with zero custom artifacts. Deferred, not a derisk
+  lever for this milestone.
+- **libcurl**: the one variant lever that matters — at write time
+  (SM-DP+ TLS), use the libcurl-openssl variant (feed default mbedtls
+  has a documented lpac incompatibility class, openwrt/packages#24963).
+  Read-only ops are unaffected (no HTTP).
+- **Modem firmware**: an upgrade is **anti-derisk** — flash risk plus
+  unpredictable CSIM-behavior change; the current firmware string
+  already matches the v4.0-proven unit. Do not touch before the
+  milestone.
+- **OpenWrt (25.12.6)**: current; no OS action before the milestone.
+
 ---
 
 ## G. Answers to the standing review questions
