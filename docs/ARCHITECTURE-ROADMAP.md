@@ -4,7 +4,72 @@
 independent assessment; external research: vsmartcard/upstream vpcd, wwand,
 lpac, pySim, osmo-remsim, android-apdu-proxy) · **Status**: assessment complete;
 near-term plan operationalized by the provisioning lane; roadmap pending owner
-adoption.
+adoption. **Late 2026-10-25 addendum below** (fork-research outcomes +
+silent.link write-window recommendation) supersedes the ordering in
+"Phased roadmap" item 2.
+
+> **Late 2026-10-25 — fork-research outcomes and the silent.link write window
+> (research lane w19:pK; reviewer-consistent; owner verdict pending).**
+>
+> Context: the silent.link credential is in hand and unconsumed; the
+> physical-reader window was struck by the owner constraint (card stays
+> seated, no external reader); the on-router read-only ladder
+> (`docs/ONROUTER-READONLY-OPTIONS.md`, PR #33) now governs sequencing, and
+> the hex-case find (`docs/FORK-RESEARCH-LPAC-QUECTEL-LPAC-BUILD.md`,
+> correction 4) has re-opened the AT path for read-only scope.
+>
+> **Hardware window (now):** R1a (stock wire capture — expect the
+> lowercase-ERROR fingerprint) → R1b (atcsimUC — expect FCI→EID) → R2 (C0
+> battery with case-control cell), per
+> `tests/hardware/onrouter-readonly-session.sh` **with the reviewer's AMEND
+> fixes applied** (env `LPAC_APDU_AT_DEVICE` not `LPAC_QMI_DEV`; background
+> tty reader + abort-able state battery; CFUN recycle + TTY re-detect
+> between rungs; **R1a completes before the atcsimUC overlay deploys** —
+> its `usr/lib/lpac/driver/driver_apdu_at_csim.so` replaces the stock
+> driver at the same path; EID grep against JSON). Zero credential risk;
+> stamps the three-defect model live.
+>
+> **silent.link deployment (the one-shot write) — transport ranking:**
+>
+> 1. **Primary: R3a (factory QMI composition + stock feed lpac/uqmi).** The
+>    only *on-router* transport with community-proven **full BPP
+>    downloads** on Quectel QMI modems — uqmi became the feed default
+>    precisely because AT-class transports abort on BPP-scale APDU chains
+>    (lpac PR #149; openwrt/packages #24883 documents the exact
+>    post-profile-switch UIM power-cycle recipe). No pacing exposure (QMI
+>    UIM is not the AT interface). Lands on the factory reference
+>    composition. Pre-gates: **libcurl-openssl variant + TLS handshake
+>    precheck against silent.link's SM-DP+ before consuming the code**
+>    (mbedtls class, #24963); settle-probe after the cold reset (RM551
+>    reboot-flakiness datum); UIM slot default left at 1 (A1); power-cycle
+>    recipe staged; A2's WAN-migration caveat priced in.
+> 2. **If the composition switch is vetoed: pull R4 forward** —
+>    pcscd-on-router + mipsel cross-build of this driver (recipe exists
+>    from PR #30 work). The v4.0 chain's semantics (400 ms pacing,
+>    `AtOutcome` no-resend) are the only ones that have carried a complete
+>    one-shot download+enable on **this exact modem+card**. Gate with an
+>    on-router read-only pass first; then it inherits that proof.
+> 3. **atcsimUC: read-only workhorse only — not the one-shot.** Unpaced
+>    BPP bursts on thrash-prone firmware, the upstream segfault sits in
+>    the ES10 error path (mid-BPP card-error SW → crash → likely burned
+>    code), and its wolfssl TLS is unverified. If ever promoted to writes:
+>    TLS precheck, `es10x_mss` lowered toward 60, spare credential in
+>    reserve.
+> 4. **Bench fallback (owner's prerogative): v4.0 PC-bridged chain** —
+>    driver on a bench PC over the existing TCP→socat→AT bridge. Proven
+>    pair, satisfies no-external-reader/card-seated, but puts a host-side
+>    process on the one-shot critical path (the constraint decision 1 was
+>    protecting). Position: abort-recovery path, or primary if the owner
+>    ranks the credential above autonomy.
+>
+> **Graduated-write discipline (any transport):** first ES10 write =
+> processing nadanada's pending notifications (reversible class) *before*
+> the download; download under no-retry discipline with debug envs +
+> timestamped capture; enable via the ECP quirk ladder (AID → ICCID →
+> refreshFlag 1/0; lpac manpage documents ECP removable-eUICC enable
+> quirks), enable-failure parking state, **nadanada displaced, never
+> deleted**; post-enable refresh per transport (uqmi power-cycle / CFUN
+> recycle); verify = EID ×3 + profile list + registration + tollgate.
 
 Species-level record, same policy as `CSIM-SESSION-FINDINGS.md`.
 
@@ -122,7 +187,9 @@ Species-level record, same policy as `CSIM-SESSION-FINDINGS.md`.
 
 | Unknown | Why it matters | Resolution path |
 |---|---|---|
-| Whether AT+CSIM can hold an ISD-R session with an enabled profile (correct `C0` + allocated-channel CLA never probed) | Decides if AT-class transports revive; changes Option B/C economics and the session-state preflight design | Post-window corrected probe battery (see tracking issue); read-only, under lane lock |
+| Whether AT+CSIM can hold an ISD-R session with an enabled profile (correct `C0` + allocated-channel CLA never probed) | Decides if AT-class transports revive; changes Option B/C economics and the session-state preflight design | **Mostly resolved offline 2026-10-25**: bench ×3 failures have a confirmed client-side cause (lowercase-hex emission; correction 4 + mock rehearsal `c33e7f7`); live R1a/R1b confirmation at the window; genuine-`C0` battery = R2 |
+| Whether silent.link's SM-DP+ TLS works with the artifact's curl build (wolfssl custom / mbedtls feed / openssl variant) | The download's HTTP leg must not fail mid-one-shot; #24963 documents an mbedtls incompatibility class | TLS handshake precheck against the SM-DP+ host **before** consuming the code (no card involved); libcurl-openssl variant staged |
+| at_csim (even patched) under BPP-scale unpaced bursts on this firmware | Decides whether atcsimUC can ever carry writes; thrash history says no | Read-only scope only for now; only measurable with a spare credential — out of scope for the one-shot |
 | ECP3 final-install single-APDU latency | Timeout budget for the one-shot; unmeasurable without a consumable activation code | Bounded by the 30s patched artifact; residual accepted and recorded |
 | MBIM UICC on RG502Q-EA specifically | The MBIM pivot's exact-modem evidence is same-family (RM520N-GL) + similar-platform (RM502Q-GL), not same-modem | Window gate step 2 (read-only `chip info`) detects immediately; abort → restore composition |
 | OmniKey external-reader fallback | Staged but never exercised end-to-end (dry-run reached the reader with the correct no-card error) | Last-resort only; a rehearsal with a sacrificial card is cheap insurance if the fallback ever becomes primary |
