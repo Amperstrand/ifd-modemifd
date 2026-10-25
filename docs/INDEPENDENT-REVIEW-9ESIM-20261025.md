@@ -593,6 +593,41 @@ binding T-B conditions** (the operationalization of "safely able"):
 
 Default-stop: any T-A anomaly holds T-B pending owner consultation.
 
+### T-B incident (2026-10-25, executing-lane report; reviewer recorded)
+
+T-B executed through: VLAN200 live-check OK → notifications processed
+(nadanada-era acks cleared; one install ack remained) → **enable-by-ICCID
+SUCCESS** → the post-enable `AT+CFUN=1,1` **wedged the modem off the USB
+bus**. Measurement never ran; rollback impossible (no transport). Card
+state: persistent and safe — test profile enabled, operational profile
+intact-but-disabled. Lane lock released; full private incident record.
+
+Recovery ladder climbed in documented order, all ineffective: host soft
+reboot; RESET_N (uci gpio515, 3 s/30 s); USB-power trick n/a (device
+electrically absent); sysfs gpio export EBUSY (hog — structural);
+driver-unbind dead-end (verified); /dev/mem compiled out; PCI path n/a.
+Final rung — a purpose-built `gpiopoke` kernel module (dump-first:
+register map confirmed live at the MT7621 GPIO window — DIR/DATA/SET/CLR
+at +0x00/+0x20/+0x30/+0x40, bit18 = modem power rail, bit4 = pwrkey;
+then `cycle` mode: register-verified 30 s rail cut, DATA 1→0→1; then
+`pwrkey` mode: 12 s force-off + 2.5 s boot press per Quectel semantics).
+**Zero USB attach events in any mode, no EDL** — the modem did not
+respond to any electrical stimulus. Module self-unloaded, hogs restored,
+`.ko` volatile, source bench-side — the reviewer endorses landing the
+source under `tools/` as a documented recovery instrument for this
+hardware family (it executed flawlessly at register level).
+
+Correlation for the record: the RM551 field report (lpac + 9eSIM on
+Quectel — modem dead after reboot "until some attempts") plus this
+incident define a **post-profile-operation reset instability class** on
+Quectel+9eSIM combinations; the settle-probe discipline in the
+checklist was designed for it and should stay mandatory.
+
+Owner decision pending on four options; reviewer assessment delivered
+(physical power cut first — strictly stronger than the kmod rail cut
+because a full cut also drops VBUS, which the load-switch rail does
+not).
+
 Execution-staging confirmation (pH, same day): the five
 conditions are staged verbatim in the private runbook (`T-B BINDING
 CONDITIONS` section) including the pre-staged re-enable one-liner —
