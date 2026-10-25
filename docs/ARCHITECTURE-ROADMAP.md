@@ -131,6 +131,15 @@ Species-level record, same policy as `CSIM-SESSION-FINDINGS.md`.
 
 ## Appendix: Option F spike protocol (wwand on the NR7101 — lab-window scope)
 
+> **Amended 2026-10-25 (owner constraint):** no sacrificial unit or card
+> exists. Phases 1–2 below are **blocked** until that changes (a sacrificial
+> eUICC could be acquired deliberately, or a second unit). Phase 0 (feed
+> survey, no router state change) and Phase 3 (desk decision matrix) remain
+> executable any time. The on-router read-only milestone itself is covered by
+> `docs/ONROUTER-READONLY-OPTIONS.md` (PR #33) and does not depend on this
+> spike. A card-level rehearsal alternative that needs no new hardware — the
+> slot-1 test USIM — is proposed there as rung R½.
+
 Goal: decide C-vs-F with measured facts, not README claims. **Sacrificial-unit
 discipline: never the 9eSIM unit, never the 9eSIM card.**
 
@@ -152,3 +161,7 @@ discipline: never the 9eSIM unit, never the 9eSIM card.**
   agent); failure modes under router restart.
 - **Gates:** lane lock held; VLAN200/tollgate unaffected; rollback =
   `opkg remove` + proto restore; timebox one lab day + writeup.
+
+**On-router read-only milestone (owner constraint of 2026-10-25):** all
+options, evidence grades, and the recommended ladder live in
+`docs/ONROUTER-READONLY-OPTIONS.md` — external review welcome on PR #33.
