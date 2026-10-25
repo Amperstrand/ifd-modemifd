@@ -16,24 +16,40 @@ flow) and are pasted at window time only.
 |---|---|---|
 | silent.link SM-DP+ | `rsp-3104.idemia.io` (IDEMIA-hosted) | Idemia/Thales class = the documented mbedtls-failure class (#24963) → TLS variant swap is a **hard pre-gate**, not optional |
 | TLS profile of that host | TLS 1.3 `TLS_AES_256_GCM_SHA384` / X25519; TLS 1.2 `ECDHE-ECDSA-AES256-GCM-SHA384`; cert `*.idemia.io` ← **GSMA RSP2 Root CI1** (ECDSA) | openssl handshake **PASS from bench**; ECDSA+GSMA-root is exactly the #24963 mbedtls complaint class |
-| lpac HTTP leg | `driver/http/curl.c` sets **no certificate verification** | chain trust is irrelevant to lpac; the only failure mode is handshake crypto — a plain `curl` round-trip is a faithful precheck |
+| lpac HTTP leg | `driver/http/curl.c:92-93` @ `a43e46ae`: `CURLOPT_SSL_VERIFYPEER=0` + `VERIFYHOST=0` — **HIGH (reviewer AMEND 2026-10-25): the entire HTTP leg incl. the one-shot download is unauthenticated TLS.** | descriptive fact below ("precheck is faithful") stands; as *posture* it is unacceptable → **write-window HARD GATE: the download artifact MUST carry #452-class TLS verification ON against a GSMA-augmented bundle** (see §A0). Read-only milestone unaffected (no HTTP). Nuance, source-verified: SGP.22's own CI-signed server authentication is transported (`es9p.c` server/smdp certificates) and the security-critical key binding is verified by the eUICC per spec — a network attacker cannot substitute profile crypto — but all LPA-visible data (profile metadata, confirmation-code prompts, flow control) rides the unauthenticated leg |
 | Remedy, prebuilt | feed `libcurl-gnutls4-8.14.1-r1.apk` (213 KiB + deps; community-proven ×2 on OpenWrt: presslab-us, kowi4); stock `libcurl4-8.23.0` coexists | no custom build needed; alternative = lane artifact rebuilt `TLS_BACKEND=openssl` |
 | Router budget | NR7101: 128 MB NAND / 256 MB RAM; `lpac-2.3.0-r1.apk` = 39 KiB | no flash/RAM constraint |
 | Session script | `onrouter-readonly-session.sh` @ `d0bdda3`, reviewer final verdict: runbook-ready | **runbook must set `EXPECTED_QCCID` + `EXPECTED_SLOT` privately** or the state-battery checks degrade to warn-only — the one step the script cannot enforce |
 
 ## A. Pre-switch (all reversible, no card-channel state)
 
+**A0. Write-window lpac artifact (HARD GATE, reviewer AMEND):** the feed
+`lpac` apk stays fine for the read-only R3a gate (no HTTP involved), but the
+**download rung uses a lane-built artifact = pin `a43e46ae` + lpac PR #452
+cherry-pick** (TLS certificate/hostname verification configurable + trust
+store; open upstream, already carried by fildunsky `p9` as commit `c1ae078`
+— cherry-pick source), built with verification **ON** against a
+GSMA-augmented CA bundle, and stamped with the same binary-fingerprint
+discipline as `atcsimUC` (`fed4c6c1`). Stock feed lpac is **not** used for
+the one-shot.
+
 1. `sysupgrade -b` → timestamped backup copied off-router.
 2. Packages: `apk add libcurl-gnutls4 lpac` (uqmi already on unit — verify
    via R0 `uqmi --help | grep uim`); repoint
-   `/usr/lib/libcurl.so.4 → libcurl-gnutls.so.4`; `df -h` headroom check
+   `/usr/lib/libcurl.so.4 → libcurl-gnutls.so.4` (**system-wide — revert is
+   on the §F restore list**); `df -h` headroom check
    after (expect a few MB total; target >20 MB free overlay).
-3. **TLS precheck (router, with the repointed libcurl)**:
-   `curl -sv https://rsp-3104.idemia.io/ -o /dev/null` —
-   **PASS = any HTTP status line** (404/405 expected on `/`); **FAIL = any
-   SSL error** → stop; remedy ladder: re-verify symlink → lane openssl
-   artifact. The router `curl` links the same system libcurl lpac will
-   dlopen, so this tests the exact code path.
+3. **TLS precheck (router, with the repointed libcurl, explicit chain
+   validation — never `-k`)**: stage an augmented bundle
+   (`cat /etc/ssl/certs/ca-certificates.crt gsma-rsp2-root-ci1.pem >
+   /tmp/augmented.pem`; the GSMA RSP2 Root CI1 public cert is staged from
+   the bench — bench evidence: system store alone returns verify code 19
+   because the GSMA root is not in public stores), then
+   `curl -sv --cacert /tmp/augmented.pem https://rsp-3104.idemia.io/ -o /dev/null` —
+   **PASS = clean verify + any HTTP status line** (404/405 expected);
+   **FAIL = any SSL/verify error** → stop; remedy ladder: re-verify symlink
+   and bundle → lane openssl artifact. The router `curl` links the same
+   system libcurl lpac will dlopen, so this tests the exact code path.
    Optional level-2: `curl -s -X POST -H 'X-Admin-Protocol: gsma/rsp/v2.2.0'
    -H 'Content-Type: application/json' -d '{}' https://rsp-3104.idemia.io/gsma/rsp2/es9plus/initiateAuthentication`
    → expect an application-level JSON error (proves full HTTP+JSON routing;
@@ -57,9 +73,12 @@ flow) and are pasted at window time only.
    enabled]` — and `lpac notification list` (count pending: rehearsal
    ammunition for B5).
 5. **Reversible-write rehearsal on the same transport**: process nadanada's
-   pending notifications (`lpac notification process <seq>`); if the queue
-   is empty, `lpac profile nickname <ICCID> <alias>` instead. ES10-write
-   class, zero card risk, proves the write path before the one-shot.
+   pending notifications (`lpac notification process <seq>`) — **preferred**.
+   Fallback `lpac profile nickname <ICCID> <alias>` is **also a persistent
+   card write** (profile NVM metadata survives power cycles): use a test
+   value, record the previous nickname first, and clean up immediately after
+   the rehearsal (`profile nickname <ICCID> <old-or-empty>`). ES10-write
+   class either way; proves the write path before the one-shot.
 
 ## C. Download window
 
@@ -99,3 +118,13 @@ flow) and are pasted at window time only.
 | ECP3 final-install latency | bounded timeouts; no-retry discipline |
 | Idemia SM-DP+ mid-BPP timeout behavior | unknown; single clean abort + capture is the whole strategy |
 | atcsimUC's wolfssl vs this host | irrelevant to route 1 (AT path not used for the one-shot); noted only if the fallback routes ever activate |
+
+## F. Post-window restore list
+
+- **Restore the `/usr/lib/lpac`-adjacent staging and the
+  `/usr/lib/libcurl.so.4` symlink to the stock mbedtls target** (the repoint
+  is system-wide: every curl consumer flips with it — harmless for the
+  router's own use, but restore anyway to keep the unit at stock shape).
+- Archive the timestamped session capture + `session.log` off-router.
+- Post-restore spot-check: `curl -s https://downloads.openwrt.org/ -o
+  /dev/null -w '%{http_code}\n'` on the restored stack.
