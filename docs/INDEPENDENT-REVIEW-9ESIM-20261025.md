@@ -547,7 +547,31 @@ attempts); fingerprint + sha256 handoff to pH on landing. Preflight doc
 amended (`ccad88b`): AT-pivot (composition switch demoted to annex G),
 T-A/T-B phases, card facts, TLS-validation datum, reissuance note.
 
+### T-A TLS prep (2026-10-25, pH) — bench datum verified-class; router-gate gap flagged
+
+Bench precheck of `rsp.truphone.com` with the GSMA-augmented bundle:
+chain `CN=1GLOBAL SM-DP+ ← GSM Association RSP2 Root CI1`, TLSv1.2
+ECDHE-ECDSA-AES256-GCM-SHA384, verification passing; plain store fails
+(error 21, root absent — same shape as the Idemia endpoint). Same CI1
+root the card binds for verification (Gate-1 PKID): the write-window
+crypto story is coherent end-to-end. Speedtest LPA string staged in the
+private runbook.
+
+**Gap flagged (reviewer)**: the router has no `curl` (busybox wget
+only), so the §A3 on-router TLS gate as written cannot run — busybox
+wget exposes no CA-bundle control and typically rides libustream-
+mbedtls, i.e. possibly the same failure class under remedy.
+Resolution: **acceptable for T-A** — the test credential is reusable,
+the download itself exercises the Gate-2 verified curl leg, and any TLS
+failure during T-A is free/diagnosable. **Not acceptable unresolved for
+the silent.link one-shot window** — before that gate, decide one of:
+install curl on the router (overlay-space permitting, 2.9 MB
+constraint), use the Gate-2 lpac HTTP leg as the prober, or explicitly
+accept host-side-only precheck with the T-A result as the router-side
+evidence. T-A blockers unchanged: Gate-2 artifact + owner GO.
+
 ### Owner directive (2026-10-25): test profiles FIRST
+
 
 
 
