@@ -365,6 +365,7 @@ const LUN_ATR: c_ulong = 0x5300_0001;
 const LUN_POWER: c_ulong = 0x5300_0002;
 const LUN_CAPS: c_ulong = 0x5300_0003;
 const LUN_TX: c_ulong = 0x5300_0004;
+const LUN_TX_NULLPTR: c_ulong = 0x5300_0009;
 const LUN_ISO_A: c_ulong = 0x5300_0005;
 const LUN_ISO_B: c_ulong = 0x5300_0006;
 const LUN_LIFECYCLE: c_ulong = 0x5300_0007;
@@ -738,12 +739,16 @@ fn transmit_reports_insufficient_buffer_with_needed_size() {
 #[test]
 fn transmit_rejects_null_pointers() {
     let m = generic_modem();
-    assert_eq!(create_by_name(LUN_TX, &m.addr), IFD_SUCCESS);
+    // Own LUN: sharing LUN_TX with the insufficient-buffer test let a
+    // parallel create_by_name swap the registry entry mid-flight and
+    // route the other test's APDU to this mock (identical answers,
+    // wrong per-mock counter) — a 30% flake, not a late counter credit.
+    assert_eq!(create_by_name(LUN_TX_NULLPTR, &m.addr), IFD_SUCCESS);
     let mut rx = [0u8; 4];
     let mut rx_len: c_ulong = 4;
     let rc = unsafe {
         IFDHTransmitToICC(
-            LUN_TX,
+            LUN_TX_NULLPTR,
             ScardIoHeader {
                 protocol: 0,
                 length: 0,
