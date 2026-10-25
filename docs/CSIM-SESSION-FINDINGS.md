@@ -32,7 +32,7 @@ bench router, copies archived lane-side)
 | ISD-R SELECT by AID, ISO channel encoding (`0n A4 04 0C 10 <ISD-R AID>`) | `61 21` deterministic | bytes nominally pending — **but collected with CLA=01 while allocation returned 02/03 (provenance flaw, §3)**; the responder identity is unresolved |
 | ISD-R SELECT inline-FCI form (`P2=00, Le=00`) | `6A82` | on an opened channel |
 | ISD-R SELECT after a *refused* open (post-exhaustion) | still `61 21` | the SELECT "answer" is decoupled from channel accounting — modem-intercepted context |
-| lpac (at_csim build `2.3.0.r466.a43e46ae`) `chip info` / `profile list` / `notification list` | `euicc_init` failure ×3 | consistent with the GET RESPONSE result — init cannot complete |
+| lpac (at_csim build `2.3.0.r466.a43e46ae`) `chip info` / `profile list` / `notification list` | `euicc_init` failure ×3 | **LEADING HYPOTHESIS (correction 4): client-side lowercase-hex rejection** — lpac emits lowercase AT+CSIM PDUs; Qualcomm-class modems are documented rejecting lowercase with fast bare `ERROR` (pySim gerrit 8e15c18 transcript; lpac #428, one-line uppercase fix, unmerged); our own UPPERCASE driver is this same modem's proven success |
 | `AT+CFUN=0` then CSIM | `+CME ERROR: 13` on CPIN, `+CME ERROR: 0` on CSIM | matches the hardware design doc: CFUN=0 makes the SIM *invalid* |
 | `AT+QUIMSLOT=2` state | already active | QUIMSLOT selects the baseband's active interface; it is not a host-owned card bus |
 
@@ -52,17 +52,42 @@ allocation returned 02/03 (CLA-provenance flaw). The T=0-absorption
 hypothesis (§8.5) loses its main motivator — the `6D00` pattern is now
 fully explained as correct rejection of a mis-encoded command.**
 
+**Correction entry 4 (fork-research lane w19:pK, reviewer-endorsed): the
+`euicc_init` ×3 failures now have a leading CLIENT-SIDE hypothesis — lpac's
+lowercase-hex AT+CSIM emission.** Evidence: pySim gerrit `8e15c18` (lowercase
+PDU → bare `ERROR`, same PDU uppercased → `61 2F`/`OK`, Sierra EM7565 — fix
+shipped in pySim years ago); lpac issue #428 (Foxconn T99W696, same
+`euicc_init` signature, one-line `hexutil.c` digits→uppercase fix, reporter
+told "Qualcomm based WWAN modules may only accept AT+CSIM commands with
+uppercase" — no fix merged upstream or in any fork as of 2026-10-25); our
+own driver's uppercase table and full SGP.22 success on this modem. The
+fast-fail (not hang) shape of the bench failures matches the pySim
+transcript. Consequences: (a) the enabled-profile session-state mechanism
+drops to secondary; (b) §10's "the AT transports are closed on this **[Update, correction 4: no longer established — see correction entry 4; client-side case rejection is the leading hypothesis for the at_csim failures.]**
+firmware generation" is no longer established; (c) the decisive experiment
+is the amended R1 discrimination build (pin + uppercase hexutil, + #446 to
+bound the stock infinite `poll(-1)`) plus the C0 battery's hex-case control
+cell — both pre-registered before any hardware runs.**
+
 What the evidence now supports (INS-independent survivors only):
 - MANAGE CHANNEL opens allocate (02/03) — real; closes are AT-refused — real
   (open-leak → `6A81` exhaustion, all rounds).
 - Basic-channel SELECT-by-FID (`9000` ×3) and READ BINARY (real EF data
   read back byte-exact) — real, the strongest surviving card-access datum.
 - Inline-FCI SELECT (P2=00/Le=00) → `6A82` — real, correctly-encoded INS.
-- On-device lpac (at_csim) `euicc_init` failure ×3 — real, and the strongest
-  INS-independent evidence that a full LPA session cannot complete over
-  AT+CSIM in the enabled-profile state; **lpac issues its own correctly
-  encoded APDUs including real `C0`, and still fails** — the WHAT stands,
-  the WHY is unknown.
+- On-device lpac (at_csim) `euicc_init` failure ×3 — real, and INS-independent.
+  **Correction 4:** "correctly encoded" is true syntactically but false
+  on-the-wire CASE — lpac emits lowercase hex in `AT+CSIM` PDUs
+  (`euicc/hexutil.c` digits table, unchanged upstream and in every fork we
+  inspected), and Qualcomm-class modems are documented rejecting lowercase
+  PDUs with a fast bare `ERROR` (pySim gerrit 8e15c18, Sierra EM7565, exact
+  transcript; lpac #428, Foxconn T99W696, identical `euicc_init` signature,
+  one-line uppercase fix — unmerged upstream). Our v4.0-proven driver emits
+  UPPERCASE (`src/at.rs`). The WHAT stands; the WHY now has a leading
+  hypothesis — **client-side case rejection**, demoting the enabled-profile
+  session-state mechanism to secondary. Pre-registered prediction: the
+  failure is fast (`ERROR`), not a hang — a stock-vs-uppercase discrimination
+  build decides it at zero card risk (see FORK-RESEARCH §3/§5).
 - Hypothesis (unproven, post-window probe class): the enabled-profile
   session-state mechanism — a corrected battery (genuine `C0` + allocated
   channel CLA + paced pairs) is drafted for post-window execution.
