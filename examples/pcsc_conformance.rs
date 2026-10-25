@@ -11,6 +11,10 @@ use std::time::Instant;
 
 /// pcsc-lite reader.h: CM_IOCTL_GET_FEATURE_REQUEST = SCARD_CTL_CODE(3400)
 const GET_FEATURE: u64 = 0x4200_0000 + 3400;
+/// SCARD_CTL_CODE(1) — the escape channel clients actually use on this
+/// bench's pcscd/ccid stack (ACR1252 recovery datapoint, 2026-10-25);
+/// must be refused like every other non-feature code
+const ESCAPE_CTL1: u64 = 0x4200_0000 + 1;
 /// vendor-escape range sample (SCARD_CTL_CODE(4680)) — must be refused
 const VENDOR_ESCAPE: u64 = 0x4200_0000 + 4680;
 
@@ -120,6 +124,16 @@ fn main() {
         matches!(&feature, Ok(v) if v.is_empty()),
         match &feature {
             Ok(v) => format!("Ok, {} bytes", v.len()),
+            Err(e) => format!("Err {e:?}"),
+        },
+    );
+
+    let escape1 = card.control(ESCAPE_CTL1, &[0xE0, 0x00], &mut ctlbuf);
+    check(
+        "escape_ctl1_rejected",
+        escape1.is_err(),
+        match &escape1 {
+            Ok(v) => format!("WRONG: Ok({} bytes)", v.len()),
             Err(e) => format!("Err {e:?}"),
         },
     );
