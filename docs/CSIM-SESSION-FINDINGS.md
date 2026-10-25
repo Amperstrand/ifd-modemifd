@@ -63,7 +63,7 @@ uppercase" — no fix merged upstream or in any fork as of 2026-10-25); our
 own driver's uppercase table and full SGP.22 success on this modem. The
 fast-fail (not hang) shape of the bench failures matches the pySim
 transcript. Consequences: (a) the enabled-profile session-state mechanism
-drops to secondary; (b) §10's "the AT transports are closed on this **[Update, correction 4: no longer established — see correction entry 4; client-side case rejection is the leading hypothesis for the at_csim failures.]**
+drops to secondary; (b) §10's "the AT transports are closed on this
 firmware generation" is no longer established; (c) the decisive experiment
 is the amended R1 discrimination build (pin + uppercase hexutil, + #446 to
 bound the stock infinite `poll(-1)`) plus the C0 battery's hex-case control
@@ -206,7 +206,7 @@ enabler (see §8).
    response-retrieval) behave differently, or is the block strictly
    modem-side? (§2 suggests modem-side; a wire-level lpac debug was not
    obtainable with this build.) Superseded by §10: the AT transports are
-   closed on this firmware generation regardless; see the QMI/MBIM path.
+   closed on this firmware generation regardless; see the QMI/MBIM path. **[Update, correction 4: no longer established — client-side lowercase-hex rejection is the leading hypothesis; see correction entry 4.]**
 
 ## 9. Evidence index (species-level)
 
