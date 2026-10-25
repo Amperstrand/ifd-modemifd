@@ -69,6 +69,21 @@ is the amended R1 discrimination build (pin + uppercase hexutil, + #446 to
 bound the stock infinite `poll(-1)`) plus the C0 battery's hex-case control
 cell — both pre-registered before any hardware runs.**
 
+**Framing per the reviewer's three-way defect split (doc of record:
+docs/FORK-RESEARCH…@b154855 + d7deded; supersedes any single-chain
+reading):** (1) lowercase rejection — client-side, PRIMARY for the bench
+x3, and **mock-confirmed offline at wire level** (rehearsal c33e7f7: stock
+fails at the lowercase ISD-R SELECT with bare `ERROR` = the bench
+signature; the uppercase build gets the FCI answered and reaches ES10);
+(2) MANAGE CHANNEL close refusal — an INDEPENDENT firmware defect (the
+bench's correctly-encoded UPPERCASE closes were refused too) — never demote
+to a case-bug symptom; (3) `6A81` exhaustion after 2–3 opens — downstream
+of (2) plus lpac closing only on the success path, leaking one channel per
+failed init (stock or uppercase alike). `61 21`/`6A82` remain unexplained —
+R2 scope. R1 interpretation caveat: if the live uppercase run dies AFTER
+printing an ES10 error JSON, that is a known upstream lpac post-error
+segfault (rehearsal-observed), not a transport finding.
+
 What the evidence now supports (INS-independent survivors only):
 - MANAGE CHANNEL opens allocate (02/03) — real; closes are AT-refused — real
   (open-leak → `6A81` exhaustion, all rounds).
