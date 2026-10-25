@@ -570,7 +570,31 @@ constraint), use the Gate-2 lpac HTTP leg as the prober, or explicitly
 accept host-side-only precheck with the T-A result as the router-side
 evidence. T-A blockers unchanged: Gate-2 artifact + owner GO.
 
+### Owner GO logged + T-B review conditions (2026-10-25)
+
+Owner GO, verbatim scope: "coordinate with the other agents + flash a
+test profile from Speedtest when safely able." Reviewer concurs with
+the execution lane's reading: the GO covers T-A and T-B with
+review-between-phases intact; no separate owner gate — **given five
+binding T-B conditions** (the operationalization of "safely able"):
+
+1. T-A review passes first, including the notification-process write
+   completing cleanly, post-install free-NVM, and complete captures.
+2. VLAN200 failover **confirmed live** immediately before enable
+   (tollgate continuity under nadanada displacement) — verified, not
+   assumed.
+3. Rollback pre-staged: the exact re-enable-nadanada-by-ICCID command
+   present in the window runbook before enable executes.
+4. Time-boxed displacement: enable → speed test → re-enable in one
+   continuous supervised session; the card is never left displaced
+   unattended.
+5. Post-T-B verification complete (nadanada re-enabled, registration +
+   QCCID, tollgate restored) before any optional profile deletion.
+
+Default-stop: any T-A anomaly holds T-B pending owner consultation.
+
 ### Owner directive (2026-10-25): test profiles FIRST
+
 
 
 
