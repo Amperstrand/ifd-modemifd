@@ -59,14 +59,18 @@ at_read() {  # at_read <cmd> [wait_s]
 
 # (C) CFUN recycle + TTY re-detection: the port shuffles across resets.
 cfun_recycle() {
-  say "CFUN recycle (AT+CFUN=1,1, ~50s, then TTY re-detect)"
-  at_read 'AT+CFUN=1,1' 5 >/dev/null 2>&1
-  sleep 50
+  # Policy (docs/MODEM-REFRESH-POLICY.md): gentle CFUN 0->1, never 1,1 —
+  # the USB stack stays up; settle + functional re-detect after.
+  say "gentle recycle (AT+CFUN=0 -> 1, ~30s, then functional TTY re-detect)"
+  at_read 'AT+CFUN=0' 5 >/dev/null 2>&1
+  sleep 8
+  at_read 'AT+CFUN=1' 5 >/dev/null 2>&1
+  sleep 25
   _found=""
   for t in /dev/ttyUSB*; do
     [ -c "$t" ] || continue
     TTY="$t"
-    if at_read 'AT' 2 2>/dev/null | grep -q 'OK'; then _found="$t"; break; fi
+    if at_read 'AT+CPIN?' 3 2>/dev/null | grep -qE 'CPIN:|\+CME'; then _found="$t"; break; fi
   done
   [ -n "$_found" ] || stop "no AT-responsive tty after recycle (checked /dev/ttyUSB*)"
   say "TTY re-detected: $TTY"
