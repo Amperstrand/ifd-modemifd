@@ -197,10 +197,26 @@ lpac upstream sources) established:
    its factory/reference configuration.
 
 **Revised plan (supersedes §6 Phase A)**: single deliberate composition
-switch to QMI (`AT+QCFG="usbnet",0` + cold modem reset — the safe single-
-switch pattern; the documented USB wedge class involved *rapid stacked*
-switches), then on-router `lpac` with `LPAC_APDU=qmi` against `/dev/cdc-wdm0`:
-`chip info` gate → disable the enabled profile (the §6 Phase-A write, now
-on-device) → download + enable the new profile → verify → restore ECM (or
-adopt QMI as the baseline, which is the factory configuration). External
-reader remains the last-resort fallback only.
+switch away from ECM to expose `/dev/cdc-wdm0`, then on-router `lpac` with
+the cdc-wdm backend: `chip info` gate → notification processing (first,
+low-stakes ES10 write) → download + enable of the new profile → verify →
+restore ECM (or adopt the new composition as baseline). External reader
+remains the last-resort fallback only. Profile-disable is demoted to an
+enable-ladder contingency: SGP.22 download is ISD-R-scoped and does not
+require an empty enabled-profile state (vendor tooling operates on
+enabled-profile cards) — the disable-first requirement was an artifact of
+the blocked AT transport, not of the card.
+
+**Build outcome (2026-10-25)**: the `qmi` backend cannot build against the
+distribution feed's libqmi 1.36.0 — the UIM logical-channel APIs are
+compiled out of that build (header `HAVE_QMI_MESSAGE_UIM_LOGICAL_CHANNEL`
+markers commented). The `mbim` backend compiles clean against libmbim
+1.32.0; a verified mipsel artifact exists lane-side (sha256 recorded in the
+window runbook; independent cross-build validation pending). Composition
+target is therefore MBIM (`usbnet=2`). Driver facts, source-verified:
+slot selection via `UIM_SLOT` env (1-based, default 1 — an implementation
+targeting the eUICC in a secondary slot MUST set it explicitly, or it
+silently addresses the wrong card); MBIM command timeouts are 15 s open /
+10 s per command / 20 s close (no short-timeout hazard for BPP-class
+installs; hung APDUs fail loudly rather than wedging); disconnect closes
+the APDU channel explicitly (no logical-channel leak).
