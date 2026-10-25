@@ -84,6 +84,31 @@ R2 scope. R1 interpretation caveat: if the live uppercase run dies AFTER
 printing an ES10 error JSON, that is a known upstream lpac post-error
 segfault (rehearsal-observed), not a transport finding.
 
+**Correction entry 5 (LIVE verdicts, Gate-1 window 2026-10-25; owner GO,
+lane-locked, read-only; stamped artifacts on the bench router +
+`tests/hardware/onrouter-readonly-session.sh` run logs): every remaining
+open question in this document is now answered on the real modem+card.**
+(1) **Case — CONFIRMED LIVE:** the stock lpac transmitted
+`AT+CSIM=42,"02a4040010a0000005591010ffffffff8900000100"` (lowercase) and
+the modem answered bare `ERROR` — the pySim-8e15c18 fingerprint on our
+hardware. The uppercase build (atcsimUC, `fed4c6c1`) completed a **full
+`chip info` LPA session over AT+CSIM with the operational profile
+enabled**. The `euicc_init` ×3 mechanism is closed: client-side emission
+case + case-rejecting modem. (2) **C0 — WORKS:** genuine GET RESPONSE on
+allocated channels 2 and 3 returned the real ISD-R FCI
+(`6F1F 8410 <ISD-R AID> A504 9F6501FF E005 8203 020202 9000`) — "GET
+RESPONSE never works" is retired with instruments, not argument. (3)
+**inline-FCI on a properly-addressed channel returns `61 21`** — the
+archived `6A82` row was the CLA-provenance artifact (correction 3),
+not modem behavior. (4) **Channel-close refusal stands** (4/4 AT-ERROR
+this window) — the independent firmware defect of the three-way split.
+Net: **the enabled-profile session-state mechanism is RETIRED**; with
+uppercase emission and correctly-encoded APDUs, a complete LPA session
+runs over AT+CSIM on this firmware. Write-window transport ranking is
+unaffected (its arguments — pacing, BPP lineage, the ES10-error-path
+segfault — are independent of this result). Species-level: card identity
+values live in the lane record, not here.
+
 What the evidence now supports (INS-independent survivors only):
 - MANAGE CHANNEL opens allocate (02/03) — real; closes are AT-refused — real
   (open-leak → `6A81` exhaustion, all rounds).
