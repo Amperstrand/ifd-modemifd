@@ -28,34 +28,55 @@ bench router, copies archived lane-side)
 | Basic-channel SELECT EF by FID (P2=0C) + READ BINARY 10 B | `9000` then real EF data | the card's ICCID EF was read back byte-exact — genuine card access at filesystem level |
 | MANAGE CHANNEL open (basic, `00 70 00 00 01`) | allocates `02…`/`03…`, `9000` | channels allocate from 2 upward while a profile is enabled |
 | MANAGE CHANNEL close (any form: basic-close `00 70 80 0n`, channel-form `0n 70 80 0n`) | AT-level `ERROR`, always | opens leak until a CFUN recycle; exhaustion (`6A81` on open) after ~3–4 opens |
-| ISD-R SELECT by AID, ISO channel encoding (`0n A4 04 0C 10 <ISD-R AID>`) | `61 21` deterministic | bytes nominally pending; see §3 for why this SW is likely NOT card-generated |
-| GET RESPONSE (`0n 2C 00 00 21`) | `6D00` at 1.5 s and 8 s gaps, both ch1- and ch2-class CLAs | never succeeds in any tried form |
+| ~~GET RESPONSE (`0n 2C 00 00 21`)~~ | `6D00` at 1.5 s and 8 s gaps, both ch1- and ch2-class CLAs | **VOID (correction 3)** — INS `2C` is RESET RETRY COUNTER, not GET RESPONSE (`C0`); `6D00` is the card correctly rejecting a mis-encoded command. No genuine `C0` was ever issued by any lane (verified across all surviving artifacts) |
+| ISD-R SELECT by AID, ISO channel encoding (`0n A4 04 0C 10 <ISD-R AID>`) | `61 21` deterministic | bytes nominally pending — **but collected with CLA=01 while allocation returned 02/03 (provenance flaw, §3)**; the responder identity is unresolved |
 | ISD-R SELECT inline-FCI form (`P2=00, Le=00`) | `6A82` | on an opened channel |
 | ISD-R SELECT after a *refused* open (post-exhaustion) | still `61 21` | the SELECT "answer" is decoupled from channel accounting — modem-intercepted context |
 | lpac (at_csim build `2.3.0.r466.a43e46ae`) `chip info` / `profile list` / `notification list` | `euicc_init` failure ×3 | consistent with the GET RESPONSE result — init cannot complete |
 | `AT+CFUN=0` then CSIM | `+CME ERROR: 13` on CPIN, `+CME ERROR: 0` on CSIM | matches the hardware design doc: CFUN=0 makes the SIM *invalid* |
 | `AT+QUIMSLOT=2` state | already active | QUIMSLOT selects the baseband's active interface; it is not a host-owned card bus |
 
-## 3. Mechanism (final, with correction log)
+## 3. Mechanism (DOWNGRADED TO HYPOTHESIS — third correction, 2026-10-25; see correction log entry 3)
 
-**While the eUICC has an enabled profile, the modem's own USIM stack holds the
-card session and `AT+CSIM` never yields an independent, coherent logical
-channel to an LPA.** SELECT-class exchanges "answer" (modem-managed contexts),
-but INS `2C` (GET RESPONSE) never works and inline-FCI SELECTs fail, so no
-multi-APDU ES10 session can complete.
+**Correction entry 3 (independent reviewer + lane audit; verified against
+artifacts): every "GET RESPONSE" probe in this investigation — ours AND the
+round-4 variant — issued INS `2C` (RESET RETRY COUNTER), not INS `C0` (GET
+RESPONSE). A card answering `6D00` to `2C` with invalid P1/P2 is CORRECT
+behavior, not transport blockage. "GET RESPONSE never works" is UNPROVEN:
+zero genuine `C0` probes exist in any surviving artifact from any lane
+(verified: probe scripts + logs, router-side and lane-side archives — the
+slot-1 allowlist round's instruments survive; none contain `C0`, so its
+recorded "C0 blocked" claim also lacks instrumented basis). Additionally
+the archived `61 21` SELECT response was collected with CLA=01 while the
+allocation returned 02/03 (CLA-provenance flaw). The T=0-absorption
+hypothesis (§8.5) loses its main motivator — the `6D00` pattern is now
+fully explained as correct rejection of a mis-encoded command.**
 
-Corrections issued during the session (kept for the record because reviewers
-may meet the same traps):
+What the evidence now supports (INS-independent survivors only):
+- MANAGE CHANNEL opens allocate (02/03) — real; closes are AT-refused — real
+  (open-leak → `6A81` exhaustion, all rounds).
+- Basic-channel SELECT-by-FID (`9000` ×3) and READ BINARY (real EF data
+  read back byte-exact) — real, the strongest surviving card-access datum.
+- Inline-FCI SELECT (P2=00/Le=00) → `6A82` — real, correctly-encoded INS.
+- On-device lpac (at_csim) `euicc_init` failure ×3 — real, and the strongest
+  INS-independent evidence that a full LPA session cannot complete over
+  AT+CSIM in the enabled-profile state; **lpac issues its own correctly
+  encoded APDUs including real `C0`, and still fails** — the WHAT stands,
+  the WHY is unknown.
+- Hypothesis (unproven, post-window probe class): the enabled-profile
+  session-state mechanism — a corrected battery (genuine `C0` + allocated
+  channel CLA + paced pairs) is drafted for post-window execution.
+
+Corrections issued during the session (kept for the record; reviewers may
+meet the same traps):
 1. *"The inactive slot-1 USIM holds channel 1"* — RETRACTED. Channels are
-   per-card; a second physical card cannot hold a channel on the eUICC. The
-   session holder is the baseband's own USIM session **with the enabled
-   profile on the eUICC itself**.
+   per-card; the second physical card cannot hold a channel on the eUICC.
 2. *"CLA `0x4X` is allowlist-blocked"* — RETRACTED. `0x41`/`0x42` are the ISO
-   7816-4 encodings of **channels 5/6** (the `b7=1` form covers channels
-   4–19). Probes using them addressed channels that were never opened; the
-   refusals were no-such-channel, not filtering.
-3. *"Pacing explains the GET RESPONSE failures"* — RETRACTED. `6D00` at both
-   1.5 s and 8 s inter-command gaps.
+   7816-4 encodings of **channels 5/6**; probes addressed channels never
+   opened; refusals were no-such-channel.
+3. *"GET RESPONSE never works (6D00 in every form)"* — VOID (this entry):
+   probes never issued `C0`. INS-byte selection must be mechanically
+   audited against the 7816-4 table before any future probe round.
 
 ## 4. Slot architecture (researched against the RG50xQ hardware design doc)
 
@@ -154,7 +175,7 @@ enabler (see §8).
    and is answered `6D00` by the MT without reaching the card. Measured card
    ATR (read via `AT+QSIMCFG="atr"`): T=0 offered first, T=1 also offered
    (TD2 protocol 1 with TA3/TB3 present, TCK present) — both link protocols
-   are available to the MT, so the T=0 hypothesis is live. Both alternatives
+   are available to the MT, so the T=0 hypothesis was live until correction 3 removed its motivator (the 6D00 pattern is explained by INS mis-encoding). Both alternatives
    keep the §6 plan intact but imply a patched host LPA cannot help.
 6. Would a patched lpac at_csim (correct ISO channel encoding + explicit
    response-retrieval) behave differently, or is the block strictly
