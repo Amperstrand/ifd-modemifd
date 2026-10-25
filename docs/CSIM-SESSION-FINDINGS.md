@@ -28,7 +28,7 @@ bench router, copies archived lane-side)
 | Basic-channel SELECT EF by FID (P2=0C) + READ BINARY 10 B | `9000` then real EF data | the card's ICCID EF was read back byte-exact — genuine card access at filesystem level |
 | MANAGE CHANNEL open (basic, `00 70 00 00 01`) | allocates `02…`/`03…`, `9000` | channels allocate from 2 upward while a profile is enabled |
 | MANAGE CHANNEL close (any form: basic-close `00 70 80 0n`, channel-form `0n 70 80 0n`) | AT-level `ERROR`, always | opens leak until a CFUN recycle; exhaustion (`6A81` on open) after ~3–4 opens |
-| ISD-R SELECT by AID, ISO channel encoding (`0n A4 04 0C 10 <ISD-R AID>`) | `61 21` deterministic | SW is card-generated; bytes pending |
+| ISD-R SELECT by AID, ISO channel encoding (`0n A4 04 0C 10 <ISD-R AID>`) | `61 21` deterministic | bytes nominally pending; see §3 for why this SW is likely NOT card-generated |
 | GET RESPONSE (`0n 2C 00 00 21`) | `6D00` at 1.5 s and 8 s gaps, both ch1- and ch2-class CLAs | never succeeds in any tried form |
 | ISD-R SELECT inline-FCI form (`P2=00, Le=00`) | `6A82` | on an opened channel |
 | ISD-R SELECT after a *refused* open (post-exhaustion) | still `61 21` | the SELECT "answer" is decoupled from channel accounting — modem-intercepted context |
@@ -108,8 +108,10 @@ enabler (see §8).
 ## 7. Standard annotations for the audit pass
 
 - ISO/IEC 7816-4 logical-channel CLA encoding: channels 1–3 in CLA bits 1–0
-  (`0x01`–`0x03`); channels 4–19 use the `b7=1` form (`0x40`–…). Our initial
-  probes violated this (§3.2) — probes must encode the *allocated* channel.
+  (`0x01`–`0x03`); channels 4–19 use the `b7=1` form where **bits 4–1** carry
+  (channel−4), i.e. CLA = `0x40+(n−4)`, range `0x40`–`0x4F` (SM moves to b6,
+  chaining to b5 in that form). Our initial probes violated this (§3.2) —
+  probes must encode the *allocated* channel.
 - 3GPP TS 27.007 `+CSIM=<length>,<command>`: `<length>` is the command length
   in **characters**; a mismatch yields an unconditional `ERROR`
   (live-verified) — indistinguishable from a policy refusal without a
@@ -122,7 +124,8 @@ enabler (see §8).
 - TLS: SM-DP+ endpoints present GSMA RSP PKI certificates (root: *GSM
   Association – RSP2 Root CI1*, SKID `81:37:0F:51…EB:FB`), absent from
   generic OS trust stores — provision a fingerprint-verified CA bundle rather
-  than disabling verification.
+  than disabling verification. Bundle note: SGP.22 v3 chains can also root at
+  *OISTE GSMA CI G1* — include all live consumer roots, not CI1 alone.
 
 ## 8. Open questions for external review
 
@@ -137,10 +140,27 @@ enabler (see §8).
 3. Should the driver (ifd-modemifd) grow a *session-state preflight* that
    detects the enabled-profile condition (open→SELECT→GET RESPONSE probe) and
    fails fast with a dedicated error, so future users don't re-derive §3?
-4. Would a patched lpac at_csim (correct ISO channel encoding + explicit
+4. Should the driver (ifd-modemifd) grow a *session-state preflight* that
+   detects the enabled-profile condition (open→SELECT→GET RESPONSE probe) and
+   fails fast with a dedicated error, so future users don't re-derive §3?
+5. Two standards-compliant alternative mechanisms for the §2 matrix that §3's
+   "modem-intercepted contexts" reading should be tested against before being
+   treated as final: **(a) MT CLA-rewrite** — the modem forwards SELECTs with
+   a rewritten CLA (basic or its own channel), so the card's answers are
+   genuine but belong to a channel the host's GET RESPONSE never addresses;
+   **(b) T=0 procedure absorption** — if the MT↔card link runs T=0, `61xx` is
+   the normal case-4 SELECT procedure byte and the T=0 layer owns the GET
+   RESPONSE exchange; a host-issued INS `2C` arrives with no procedure context
+   and is answered `6D00` by the MT without reaching the card. Measured card
+   ATR (read via `AT+QSIMCFG="atr"`): T=0 offered first, T=1 also offered
+   (TD2 protocol 1 with TA3/TB3 present, TCK present) — both link protocols
+   are available to the MT, so the T=0 hypothesis is live. Both alternatives
+   keep the §6 plan intact but imply a patched host LPA cannot help.
+6. Would a patched lpac at_csim (correct ISO channel encoding + explicit
    response-retrieval) behave differently, or is the block strictly
    modem-side? (§2 suggests modem-side; a wire-level lpac debug was not
-   obtainable with this build.)
+   obtainable with this build.) Superseded by §10: the AT transports are
+   closed on this firmware generation regardless; see the QMI/MBIM path.
 
 ## 9. Evidence index (species-level)
 
@@ -150,3 +170,37 @@ channel facts), `slot2-cfun-*.log` (recycles), plus the lane-side window logs
 for the lpac, encoding-discrimination, CFUN=0, and inline-FCI tests.
 Lane-side durable archive: probe script (length-audited), runbook, GSMA root
 bundle (fingerprint-verified), and all of the above logs.
+
+## 10. Post-research addendum (2026-10-25, drives the plan revision)
+
+Follow-up research (vendor application notes, Quectel forum field reports,
+lpac upstream sources) established:
+
+1. **`AT+QESIM` operations are vestigial on this firmware generation,
+   family-wide**: multiple independent field reports (RM520N/RM510Q class)
+   show `lpa_enable,1` succeeding while every other op returns `ERROR`;
+   Quectel support's official answer is that profile operations require
+   their separate tool. The ops also require `lpa_enable=1`, which our bench
+   has a documented do-not-toggle wedge incident for. Even if the ops
+   worked, this build does not advertise `add_profile` — downloads would
+   still need an LPA.
+2. **The vendor's own eSIM channel is QMI UIM**: the gated `quectel_lpad`
+   tool drives profile operations exclusively through QMI UIM messages
+   (its own debug logs), and only in usbnet (non-ECM) composition.
+   Third-party product eSIM stacks for these modems converge on the same
+   class of low-level SIM access (QMI/MBIM).
+3. **lpac upstream carries `qmi` (cdc-wdm) and `mbim` (UICC low-level)
+   APDU backends in-tree** — self-contained C, buildable for the router
+   target by the same cross-build pipeline that produced the at_csim build.
+4. **ECM composition (this unit's current state) exposes no `/dev/cdc-wdm*`**;
+   QMI or MBIM composition does. The unit previously ran QMI composition as
+   its factory/reference configuration.
+
+**Revised plan (supersedes §6 Phase A)**: single deliberate composition
+switch to QMI (`AT+QCFG="usbnet",0` + cold modem reset — the safe single-
+switch pattern; the documented USB wedge class involved *rapid stacked*
+switches), then on-router `lpac` with `LPAC_APDU=qmi` against `/dev/cdc-wdm0`:
+`chip info` gate → disable the enabled profile (the §6 Phase-A write, now
+on-device) → download + enable the new profile → verify → restore ECM (or
+adopt QMI as the baseline, which is the factory configuration). External
+reader remains the last-resort fallback only.
