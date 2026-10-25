@@ -777,7 +777,37 @@ behavior (R1), the `61 21`/`6A82` mechanisms (R2), uqmi-client on AACR
 under lane discipline and owner gates. Upstream reports (#428 comment +
 segfault issue) drafted, owner-gated, sequenced after R1's live capture.
 
-### Version-lever assessment (2026-10-25, owner question)
+### Session-script review — `onrouter-readonly-session.sh` (a967071, 2026-10-25)
+
+Verdict: **AMEND** — structure, preflight set, read-only discipline,
+interpretation reminders, and timeout bounds endorsed; five items
+required before the runbook records it:
+
+- **(A) Blocking — wrong env var**: `LPAC_QMI_DEV` is not read by the
+  at_csim backend; both invocations need `LPAC_APDU_AT_DEVICE`
+  (source-verified `at_cmd.h`; the offline rehearsal used it).
+- **(B) Blocking — blind AT battery**: the loop writes to the tty but
+  never reads it, so the state battery captures nothing; needs the
+  background-reader pattern *plus* explicit abort checks (QUIMSLOT =
+  eUICC slot, QCCID = eUICC ICCID, else stop). A battery that cannot
+  fail verifies nothing.
+- **(C) Structural — no CFUN recycle**: pre-existing leaks plus one
+  leak per failed run plus two from the battery would push later rungs
+  into `6A81` for the wrong reason. Recycle (`AT+CFUN=1,1`, ~50 s, then
+  **TTY re-detection** — the fixed port will not survive the shuffle,
+  and the promised auto-detect has no logic) before R1a, between
+  R1a/R1b, and before R2.
+- **(D) Deployment-order requirement (runbook-level)**: the atcsimUC
+  tarball ships the driver at the same path as the stock install, and
+  upstream `a43e46ae` has no `LPAC_DRIVER_HOME` override — extracting
+  UC over `/` replaces the stock driver. R1a must complete before the
+  UC overlay deploys, with the order recorded in the session log (or a
+  disjoint tree verified first).
+- **(E) EID grep can never match** (lpac emits JSON): use
+  `grep -o '"eid"[: ]*"[0-9A-Fa-f]\{32\}"'`.
+
+Classification: review finding, not a lane dispute — same class as the
+rehearsal catching the battery's verdict glob.
 
 - **lpac**: the pinned `a43e46ae` **is upstream main** (verified: 0
   commits ahead; latest release v2.3.0). Custom builds differ only in
