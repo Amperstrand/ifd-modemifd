@@ -629,6 +629,62 @@ declined, the ladder runs R1→R4 directly with every rung read-only.
   ordering; another data point against assuming firmware-generation
   uniformity.
 
+### Lowercase-hex smoking gun (2026-10-25, w19:pK handover — independently verified by this review)
+
+The deep-dive lane's handover (`docs/FORK-RESEARCH-LPAC-QUECTEL-LPAC-BUILD.md`,
+commit `b31bc36`) supersedes this review's #447 hypothesis above. **The
+reviewer's #447 mechanism was wrong** (those PRs patch `at_etsi.c` — the
+CGLA backend — not `at_etsi_csim.c`, and at_csim's capability probe
+already passes on bare OK). The replacement hypothesis, verified
+first-hand by this review against the pinned checkout:
+
+- lpac `euicc/hexutil.c` emits **lowercase** hex (`digits[] =
+  "0123456789abcdef"`), so every at_csim APDU crosses the wire
+  lowercase at `a43e46ae`, at upstream main today, and in fildunsky p9.
+- This project's driver emits **uppercase** (`src/at.rs`, ABCDEF table)
+  and carried the complete v4.0 provisioning on this exact modem —
+  lpac's lowercase never reached the modem in that run (pcsc backend).
+- Field evidence for Qualcomm-class lowercase rejection: pySim gerrit
+  8e15c18 (Sierra EM7565: lowercase → bare ERROR, uppercase → works);
+  lpac #428 (Foxconn T99W696: at_csim `euicc_init` failure — **the
+  bench's exact error signature** — with a one-line digits fix
+  attached, still unmerged upstream).
+
+Consequences:
+
+- The bench `euicc_init` ×3 failures now have a complete **client-side**
+  explanation that requires neither channel exhaustion nor any
+  enabled-profile mechanism. Channel exhaustion is demoted to a
+  secondary, unexcluded hypothesis for those runs.
+- **R1 amended (pre-registered)**: discrimination builds = stock
+  `a43e46ae` vs pin + uppercase hexutil (+ #446 to bound silent hangs —
+  the pinned `at_expect` uses `poll(-1)`). Prediction: with AT_DEBUG,
+  the stock build's capture shows lowercase `AT+CSIM=…` answered
+  `ERROR` (pySim fast-fail shape — matches bench) or silence (hang
+  shape); the uppercase build's same commands get `+CSIM:` responses
+  (probe-log precedent). Either outcome is decisive; the capture makes
+  it evidence either way.
+- The corrected findings doc's lpac row needs a third annotation at its
+  next touch: leading hypothesis = lowercase-hex AT rejection
+  (client-side), exhaustion secondary.
+- The §A.4 anomalies (`61 21` decoupling, `6A82`) are NOT explained by
+  case (all probes were uppercase) — R2 remains necessary for those.
+
+Additional handover verdicts, accepted and recorded: **libqmi tension
+resolved** (UIM logical-channel messages exist only in the FULL
+collection; defconfig picks BASIC — the compiled-out mechanism;
+fildunsky `d27874e` forces `CONFIG_LIBQMI_COLLECTION_FULL=y`; version
+floor fine — config, not version); fildunsky ships a ready-made
+`lpac-25.12.5-ramips-mt7621.apk` (v2.3.0-r4) as a third discrimination
+binary; the official 25.12 feed lpac has a **broken stdio backend**
+(their LuCI README); lpac #450 (open) is the in-tree opt-in SIM
+power-cycle after profile toggle; the lpac manpage documents
+ECP-removable-eUICC **enable quirks** (try AID → ICCID → refreshFlag —
+matches our enable ladder) — a write-window datum for our ECP3; RM551
+field report (lpac + 9eSIM cards on Quectel works, but AT/QMI APDU is
+dead after reboot until "some attempts") sets the **post-switch
+settle-probe expectation for R3a**.
+
 ### Version-lever assessment (2026-10-25, owner question)
 
 - **lpac**: the pinned `a43e46ae` **is upstream main** (verified: 0
