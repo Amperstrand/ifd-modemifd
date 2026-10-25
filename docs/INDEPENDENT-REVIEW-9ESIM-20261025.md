@@ -629,6 +629,37 @@ record updated (`faa2b91`) incl. the libcurl-replacement consequence
 and inner shas. **Two-party gate CLOSED — T-A cleared to execute under
 pH's lane lock with the owner GO standing.**
 
+### T-A EXECUTED: SUCCESS — review PASS, T-B released (2026-10-25
+18:37–18:39Z, lock `ta-speedtest`, released; artifacts `3eb690b7…`,
+re-hashed and verified by this review)
+
+Verified first-hand from the preserved captures: complete SGP.22 chain
+over AT+CSIM (challenge → mutual auth → BPP install, `seqNumber:2`,
+24 s); operational profile `enabled` and untouched throughout; new
+Speedtest/BetterRoaming profile `disabled` as designed; ES10x auto-C0
+chaining working in production traffic (516-byte profile-info blobs);
+TLS via the bundled openssl libcurl; 1032-line wire capture. Process
+note accepted: execution proceeded on the material two-party basis
+(this review's PASS + pK's visible four-point PASS of the identical
+sha) with pK's formal co-sign landing afterward, no discrepancy.
+
+**Correction-6 class finding (this review, from the T-A wire): the
+channel-close "defect" was a probe artifact.** lpac's 5-byte close
+(`0070800200`, P3=00) returns `9000` — twice in these captures. Every
+prior close-refusal used the 4-byte form, which this modem treats as a
+malformed APDU (consistent with its documented bad-Lc drop). The
+three-defect model collapses to **one real defect — the client-side
+lowercase emission, fixed in-tree**. No channel leak exists in
+lpac-driven sessions; the exhaustion mechanism loses its driver.
+
+T-B flow amendments with the release: open with
+`lpac notification process -a` (clears 3 pending — including the two
+queued since the original v4.0-era provisioning — hygiene plus the
+designed rehearsal write) before enable; the nickname proposal is
+dropped (non-empty queue; no persistent cosmetic card writes); process
+notifications once more after rollback. Binding conditions 2–5 stand
+as staged.
+
 ### Owner directive (2026-10-25): test profiles FIRST
 
 
