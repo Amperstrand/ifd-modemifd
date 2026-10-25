@@ -1364,3 +1364,20 @@ without any further card probing.
 - Cross-build SDK libqmi 1.36.0 headers (UIM APDU surface compiled
   out); built artifacts sha256 `19d6f87d…aa94` / `7307e038…d45b`
   (re-hashed on disk this session).
+
+
+### PR #34 final state (2026-10-25)
+
+Pre-merge review (w19:pK): species-level sweep of the full +3472-line
+diff CLEAN (credentials absent; sha256s and public test identifiers
+only). The one pre-merge finding — a ~30% flake in the pin suite — was
+root-caused by this review to a cross-test LUN collision (parallel
+`create_by_name` swapping the shared `LUN_TX` registry entry mid-flight,
+routing the APDU to the other test's identical mock: API assertions
+pass, per-mock counter reads 0). Fixed by per-test LUN ownership
+(`LUN_TX_NULLPTR`), mechanism documented in-code; **10/10 deterministic
+green verified independently by both parties**. Verdict: APPROVE-clean
+both parties. Meta-note accepted for the record: the registry-isolation
+test covered multi-reader semantics but not constant-sharing between
+sibling tests — the mechanism comment is the guard for future authors.
+Owner merges on judgment.
