@@ -187,13 +187,18 @@ Captures: `/tmp/opencode/r1-{stock,upper}-{atdebug,out}.log`.
 - **RX safety:** lpac's receive-side hex parsing case-folds (`| 0x20`) —
   the uppercase TX patch cannot break RX decoding of modem responses
   (which come back uppercase anyway).
-- **Hypothesis reconciliation (the important one):** the lanes' original
-  *channel-exhaustion* hypothesis and the *case-bug* are now one causal
-  chain — case-bug → init fails fast → `logic_channel_close` never runs →
-  channel leak per attempt → compounding exhaustion. The bench's
-  `6A81`-after-2–3-opens and refused closes slot in as **downstream
-  symptoms**, not an independent mechanism. Case-bug primary; exhaustion
-  secondary/compounding.
+- **Defect model (reviewer-corrected 2026-10-25; supersedes the single
+  causal chain first written here):** THREE independent defects are now in
+  evidence, none requiring the enabled-profile theory:
+  1. **lowercase CSIM rejection** — client-side (lpac `hexutil`), primary
+     for the bench ×3;
+  2. **channel-CLOSE refusal** — an **independent firmware defect**: the
+     bench's correctly-encoded *uppercase* MANAGE CHANNEL closes were also
+     refused; do **not** demote this to a case-bug symptom;
+  3. **exhaustion / `6A81` after 2–3 opens** — downstream of #2 plus leaked
+     channels (lpac's close lives in the success path, so every failed
+     init — stock or uppercase — leaks one more channel).
+  Only the `61 21` / `6A82` anomalies remain unexplained — R2 scope.
 - **Status change for R1:** on-router R1 is now a **confirmation run, not
   exploration** — the mock fingerprint (pySim/#428 shape) predicts: bare
   `ERROR` on the lowercase SELECT from stock, `+CSIM:` FCI from the
@@ -275,10 +280,15 @@ on ES10 STORE DATA (at_csim path)".
 3. If R3a is reached: install-check fildunsky's mt7621 apk alongside the
    feed package (different `LPAC_DRIVER_HOME` wrapper shape — good packaging
    cross-reference for our own artifacts).
-4. Upstream report of the post-error segfault (draft title/transcript in
-   §3) — **owner decision** (external publish); would also be the natural
-   vehicle to re-raise #428's uppercase fix with a second Qualcomm-class
-   data point (RG502Q-EA) attached.
+4. Upstream reports — **TWO separate owner-gated artifacts, no bundling**
+   (reviewer decision 2026-10-25): (a) a comment on existing lpac #428 —
+   RG502Q-EA as a second Qualcomm-class data point + the rehearsal wire
+   captures + the maintainer's own unimplemented
+   `LPAC_APDU_AT_HEX=UPPER` suggestion; (b) a **new** segfault issue
+   (draft title/transcript in §3), cross-referenced to (a). Sequencing:
+   file **after** R1's live wire capture so the upstream claim carries
+   live confirmation; species-level content only (mock artifacts + public
+   AIDs; no bench context or identifiers).
 
 ## Source index
 
