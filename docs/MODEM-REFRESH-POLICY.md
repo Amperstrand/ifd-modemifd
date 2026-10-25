@@ -26,7 +26,7 @@ Species-level record.
    APDU instability until settle (Quectel forum); Quectel RG50xQ AT manual —
    hardware reset recommended when CFUN resets misbehave.
 
-## The completed matrix (2026-10-25, firmware RG502QEAACR13A02M4G_ZYXEL)
+## The completed matrix (2026-10-25, firmware RG502QEAACR13A03M4G_ZYXEL)
 
 All three profile-switch mechanisms were live-tested, one wedge each — the
 differentiator is **not the refresh method**; it is this firmware's USIM
