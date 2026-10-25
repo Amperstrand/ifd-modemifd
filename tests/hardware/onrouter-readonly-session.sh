@@ -150,6 +150,8 @@ if [ -x "$BATTERY" ] && case " $RUNGS " in *" r2 "*) true;; *) false;; esac; the
   sh "$BATTERY" "$TTY" 2 > "$DIR/r2-battery.log" 2>&1
   r2=$?
   say "R2 exit=$r2"; grep -E "C0:|hex-case:|inline-FCI:" "$DIR/r2-battery.log"
+elif [ -x "$BATTERY" ]; then
+  say "SKIP R2 (RUNGS=$RUNGS)"
 else
   say "SKIP: battery not found at $BATTERY"
 fi
