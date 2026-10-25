@@ -133,7 +133,7 @@ events; unresponsive to host reboot, RESET_N 1/3/30 s, a register-verified
 Recovery: a 20-second **physical** power cut — strictly stronger than the
 load-switch rail cycle because it drops VBUS with every rail (reviewer
 physics, confirmed empirically). Post-recovery: **rollback COMPLETE and
-verified** — `enable 89353082711108402322` by ICCID, gentle `CFUN 0→1`
+verified** — `enable <operational-profile-ICCID>` by ICCID (the literal value lives in the private runbook), gentle `CFUN 0→1`
 refresh (USB stack stayed up — the prevention held), QCCID = nadanada live,
 CEREG registered (roaming), notifications cleared (`rc=0`), VLAN200
 tollgate verified, `usb0` data session up. Card state after: **nadanada
