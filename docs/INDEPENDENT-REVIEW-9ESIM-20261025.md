@@ -809,6 +809,21 @@ required before the runbook records it:
 Classification: review finding, not a lane dispute — same class as the
 rehearsal catching the battery's verdict glob.
 
+**Re-verification of fixes (d0bdda3, this review): AGREE.** All five
+items verified in the amended script first-hand: (A)
+`LPAC_APDU_AT_DEVICE` in both invocations, `LPAC_QMI_DEV` gone; (B)
+`at_read` reader-backed battery with **hard stop** on `CPIN READY` and
+enforced `EXPECTED_QCCID`/`EXPECTED_SLOT` when set (warn-only when
+unset is the correct species-policy compromise — the private runbook
+MUST set both); (C) `cfun_recycle` = `AT+CFUN=1,1` + 50 s +
+AT-responsive re-detection across `/dev/ttyUSB*` with hard stop on no
+port, updating the global `TTY`, called before R1a, between R1a/R1b,
+and before R2; (D) binary-safe `grep -qa` guard blocks R1a if a UC
+overlay is present at the known path; (E) JSON-aware EID grep. The
+rehearsal-instrument evidence (`rehearse_c0_battery.py`) is regenerable
+in-tree. **The session script is runbook-ready; the window now needs
+only owner GO.**
+
 ### Version-lever assessment (2026-10-25, owner question)
 
 - **lpac**: the pinned `a43e46ae` **is upstream main** (verified: 0
