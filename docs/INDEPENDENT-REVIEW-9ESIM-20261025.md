@@ -619,6 +619,16 @@ caught by the in-manifest stack line before any consumption or router
 contact; branch-guard added; superseded shas documented. **T-A
 proceeds on pK's co-sign per the two-party gate.**
 
+Co-sign issued (pK, same day): sha re-verified exact; F1–F4 first-hand
+(F2 strengthened with `timerfd_create` import as the structural #446
+marker; DT_RPATH + loader-source construction match for plugin
+discovery); their qemu behavioral test left incomplete (harness
+limitation, noted honestly in the sign) with basis = structural +
+Gate-1 R1b live-convention proof + this review's PASS. Checklist of
+record updated (`faa2b91`) incl. the libcurl-replacement consequence
+and inner shas. **Two-party gate CLOSED — T-A cleared to execute under
+pH's lane lock with the owner GO standing.**
+
 ### Owner directive (2026-10-25): test profiles FIRST
 
 
