@@ -809,6 +809,8 @@ required before the runbook records it:
 Classification: review finding, not a lane dispute — same class as the
 rehearsal catching the battery's verdict glob.
 
+### Version-lever assessment (2026-10-25, owner question)
+
 - **lpac**: the pinned `a43e46ae` **is upstream main** (verified: 0
   commits ahead; latest release v2.3.0). Custom builds differ only in
   backend selection/timeout patch. Nothing newer exists to adopt.
