@@ -153,6 +153,40 @@ from the record: a smart-quote vs straight-quote AT trap (a user's
 `AT+QCFG` ERRORs were typographic quotes — the same class of silent
 encoding traps as our hex-case finding).
 
+## 11. Mode verdict & test framework (2026-10-25)
+
+The two rankings are **anti-correlated** on this box, and the workload
+sits on the stability axis:
+
+| | Fastest | Most stable |
+|---|---|---|
+| 1 | vendor q_drivers (QMAP aggregation; ~480 Mbps @ 20% CPU) | **ECM** (simplest kernel path, no daemons, measured stable through the worst day the modem has had) |
+| 2 | MBIM / in-kernel QMI (~150-200 Mbps, softirq-bound) | MBIM (maintainer's own mode; no open kernel issue) |
+| 3 | ECM (~90 Mbps class) | in-kernel QMI (open TX-timeout class, #10577) |
+
+**Verdict for this workload: ECM is not the compromise — it is the
+correct choice.** The tollgate's bandwidth needs are a rounding error
+against ECM's floor; every faster mode buys throughput this workload
+does not need, at the cost of kernel-path complexity, daemons, or
+out-of-tree coupling. The wedge class is orthogonal to this table
+(firmware USIM re-init at profile switches, any mode) — no mode choice
+buys protection; the refresh doctrine + recovery rungs cover it.
+
+**Mode-test framework** (should a test ever be wanted):
+
+- **MBIM test** — only load-bearing if the survive-cycle observation at
+  the wedge-#3 recovery comes back negative; then it doubles with the
+  RedteaGO rehearsal (one window, two learnings: third-operator
+  diversity + wedge-in-MBIM hypothesis). Maintainer-endorsed mode, our
+  mbim artifacts already hashed. Costs two cold resets.
+- **Vendor q_drivers test** — a *throughput* project, not a stability
+  one: dedicated window, full backup + revert path, iperf3 before/after
+  (methodology proven), kernel-version-coupled modules documented as
+  maintenance cost. Sequence AFTER the one-shot: do not churn the
+  known-good state the one-shot provisions on.
+- **Never on the critical path**: no mode flip while the one-shot
+  credential is exposed.
+
 ## 9. Reproduction checklist (condensed)
 
 1. Verify artifact sha `b587d46f…` + the three fingerprints (§3).
