@@ -466,7 +466,53 @@ installs for later phases need cleanup first. (3) pK's commit semantic:
 Gate-2 build exists before T-A. (4) Owner-side item in parallel:
 silent.link reissue policy.
 
+### Gate-1 live results — VERIFIED by this review (2026-10-25, window
+`window-arch-r1r2`, lane lock taken/released; two runs, evidence
+attributed per run)
+
+Verified from the host-side captures (`window-run.log` 10:12 run,
+`window-run2.log` 10:18 run) — the milestone reports are real:
+
+- **R1a stock (run 2)**: `exit=255`, `AT_DEBUG_RX: ERROR` on the
+  lowercase ISD-R SELECT — the pySim fingerprint **live on our modem**,
+  third independent confirmation (mock, battery case-control, now live).
+- **R1b atcsimUC (run 2)**: `exit=0`, **complete EUICCInfo2 JSON over
+  AT+CSIM with the operational profile ENABLED** — a full LPA session
+  (open → ISD-R select → ES10 reads) on the production card, on-router.
+  **"Enabled profile blocks CSIM LPA sessions" is CONTRADICTED.**
+- **R2 battery (run 1; run 2 SKIPped on a missing battery path —
+  evidence attribution corrected from the merged report)**:
+  `C0: ALLOCATED-CHANNEL-OK` and `hex-case: LOWERCASE-REJECTED(ERROR)` —
+  GET RESPONSE on properly-allocated channels returns data-bearing
+  success; "GET RESPONSE never works" is **retired**. The precise FCI
+  bytes (6F1F …), the inline-FCI `61 21` on a properly-addressed
+  channel, and close-refusal 4/4 are router-side artifacts (lane to
+  fold into correction 5) — reported and consistent with all prior
+  evidence; FCI content not yet re-verified host-side.
+- Card facts (private logs only): EID matches census; free NVM
+  409,335 B; `rspCapability: additionalProfile, testProfileSupport`
+  (T-A/T-B card-supported); CI PKID for verification/signing = RSP2
+  Root CI1 SKID — the TLS-chain root matches the card's key-verification
+  list end-to-end.
+
+**Architectural consequence**: the provisioning transport is decided —
+**AT+CSIM via the atcsimUC-class tree**. No composition switch, no WAN
+migration, no overlay-space package installs are required for T-A, T-B,
+or the silent.link one-shot. Route-1's composition phase is demoted to
+the long-term reader workstream. **Gate-2 artifact spec amended
+(urgently, to pK): atcsimUC (uppercase + #446) + #452 + segfault fix** —
+a pin+#452-only build would die at the first SELECT on the now-chosen
+path.
+
+Standing-question verdicts updated: Q1 void (unchanged), Q2 answered —
+**contradicted**, AT+CSIM provisions enabled-profile eUICCs (client
+case-bug was the blocker); Q3 answered — lowercase rejection, confirmed
+live; Q4/Q5 mooted for provisioning (QMI remains long-term reader
+option); Q9 superseded — safest path today is the proven AT transport
++ hardened Gate-2 build.
+
 ### Owner directive (2026-10-25): test profiles FIRST
+
 
 The rehearsal download is promoted from recommendation to plan of
 record: provision a **free, reusable test profile before the silent.link
