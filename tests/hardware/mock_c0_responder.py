@@ -48,7 +48,7 @@ def respond(w, line, scenario, state):
         # P2=0C "no data returned": plain 9000, no 61xx
         w.write('\r\n+CSIM: 4,"9000"\r\n\r\nOK\r\n')
     elif line.startswith('AT+CSIM=10,"00B000000A"'):
-        w.write('\r\n+CSIM: 24,"98530328171180043222" + "9000"\r\n\r\nOK\r\n'.replace('" + "', '"'))
+        w.write('\r\n+CSIM: 24,"984500000000000000109000"\r\n\r\nOK\r\n'.replace('" + "', '"'))
     elif line.startswith('AT+CSIM=8,"0070800'):
         # MANAGE CHANNEL close: AT-level refusal (leak class) — plain ERROR
         w.write("\r\nERROR\r\n")
