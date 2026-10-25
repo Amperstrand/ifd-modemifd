@@ -1381,3 +1381,29 @@ both parties. Meta-note accepted for the record: the registry-isolation
 test covered multi-reader semantics but not constant-sharing between
 sibling tests — the mechanism comment is the guard for future authors.
 Owner merges on judgment.
+
+### T-B resolution + PR#34 species catch (2026-10-25, closeout)
+
+**T-B: EXECUTED-ABORTED-RESOLVED.** The owner's 20-second physical
+power cut recovered the wedged modem (the VBUS-physics argument
+confirmed empirically — strictly stronger than the load-switch rail
+cycle); rollback completed and verified via gentle CFUN 0->1 (USB
+stable — the prevention held): nadanada enabled+active, BetterRoaming
+present+disabled, nothing deleted, one-shot credential untouched, toll
+gate on VLAN200 throughout. A second execution attempt failed both
+enables at euicc_init pre-write (card untouched) and wedged the modem
+into silent-but-on-bus — both reset signatures now observed; measurement
+deferred to non-reset tooling per the encoded refresh policy
+(refreshFlag enable > QMI UIM power-cycle > CFUN 0->1; CFUN=1,1
+forbidden after profile operations). Modem awaits a second 20 s cut
+(no urgency). gpiopoke landed at tools/gpiopoke (6d00cf9) with the
+verified register map — the software rung below the physical cut.
+
+**PR#34 species catch (this review, pre-merge):** KNOWN-GOOD §8 was
+appended after the pre-merge sweep and carried the rollback one-liner's
+literal production ICCID — redacted to a private-runbook placeholder;
+post-fix sweep confirms zero full production identifiers across the
+merge set. Process lesson recorded from the straggler artifact loss:
+pull session artifacts off-router before requesting power cuts (tmpfs).
+
+Disagreement ledger at close: zero entries, all session.
