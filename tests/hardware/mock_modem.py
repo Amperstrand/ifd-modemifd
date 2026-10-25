@@ -152,6 +152,10 @@ def process_line(state: ConnState, line: str, cfg: dict) -> list[str] | None:
     declared, hexs = int(m.group(1)), m.group(2)
     if declared != len(hexs) or len(hexs) % 2:
         return ["ERROR"]
+    if cfg.get("case_sensitive") and any(c in "abcdef" for c in hexs):
+        # Qualcomm-class lowercase rejection (pySim gerrit 8e15c18 /
+        # lpac #428 fingerprint): lowercase CSIM payload -> bare ERROR.
+        return ["ERROR"]
     rapdu = state.handle_apdu(bytes.fromhex(hexs), cfg["filter"] == "basic")
     if rapdu is None:
         return None  # basic-channel drop: echo, then silence
@@ -237,10 +241,14 @@ def main() -> int:
                          "none = filter disabled (drift check)")
     ap.add_argument("--chaos-urc", action="store_true",
                     help="interleave a +CPIN: READY URC before each +CSIM answer")
+    ap.add_argument("--case-sensitive", action="store_true",
+                    help="reject lowercase CSIM payloads with bare ERROR "
+                         "(Qualcomm-class parser fingerprint)")
     args = ap.parse_args()
 
     logf = open(args.log, "a", encoding="utf-8") if args.log else sys.stdout
-    cfg = {"filter": args.filter, "chaos_urc": args.chaos_urc, "logf": logf}
+    cfg = {"filter": args.filter, "chaos_urc": args.chaos_urc,
+           "case_sensitive": args.case_sensitive, "logf": logf}
     serve(args.listen, cfg)
     return 0
 

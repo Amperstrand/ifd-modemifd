@@ -43,9 +43,21 @@ Measured with `tests/hardware/validate.sh` + the APDU shape probes — useful
 to anyone driving this modem family as a smartcard reader:
 
 - **Basic-channel filter**: the modem silently drops SELECT-by-AID/DF-name
-  (A4 with P1=04) and READ BINARY (B0) on the basic channel (channel 0).
-  The same APDUs on logical channels pass instantly. Silence shows up as a
-  driver timeout returning SW 6F00.
+  (A4 with P1=04) on the basic channel (channel 0); the same APDU on a
+  logical channel passes instantly. Silence shows up as a driver timeout
+  returning SW 6F00. (An earlier version of this finding also claimed a
+  READ BINARY drop on the basic channel — contradicted by later
+  bench evidence reading real EF data there; treat only the A4 half as
+  established.)
+- **CSIM hex case matters**: the modem's `AT+CSIM` parser answers a bare
+  `ERROR` to lowercase hex payloads (Qualcomm-class behaviour; pySim
+  gerrit 8e15c18, lpac #428/#466). This driver emits uppercase
+  (`src/at.rs`), which is the accepted form — pinned by regression
+  tests in `tests/mock_at.rs`.
+- **MANAGE CHANNEL close needs the 5-byte form**: `xx 70 80 xx 00`
+  (P3=00) returns `9000`; the 4-byte form is dropped as malformed
+  (AT-level `ERROR`). See `tests/mock_at.rs` pins and the corrected
+  findings in `docs/CSIM-SESSION-FINDINGS.md` (correction 6).
 - **No command-size ceiling**: well-formed STORE DATA and SELECT commands
   of 100+ bytes transport fine; command SIZE is not the BPP-load failure
   mode. Malformed APDUs (bad Lc) ARE silently dropped.
@@ -66,6 +78,13 @@ to anyone driving this modem family as a smartcard reader:
   firmware except for testing.
 - **The AT port shuffles across resets** (ttyUSB0-3): never hardcode it.
   The reference socat bridge init script auto-detects at start.
+
+For the complete corrected record of this modem's verified behaviour —
+including the 2026-10-25 on-device SGP.22 provisioning proof over plain
+AT+CSIM (complete download, enabled operational profile in place, no
+composition switch) — see `docs/KNOWN-GOOD-ONDEVICE-PROVISIONING.md`,
+`docs/CSIM-SESSION-FINDINGS.md`, and the evidence ledger in
+`docs/INDEPENDENT-REVIEW-9ESIM-20261025.md`.
 
 ## Validation gate (split suites, dry-run by default)
 
