@@ -701,9 +701,11 @@ committed) over a pty bridge. Wire captures on file
 - **Uppercase build**: same open → SELECT **uppercase** →
   `+CSIM: 16,"6F048402A0009000"` (**FCI answered, 9000**) → proceeds to
   ES10 getEID STORE DATA (`82E2910006BF3E015A`-class) → mock (no E2
-  implementation) answers `6D00` → lpac segfaults in the ES10
-  error-parse path (upstream bug, observed and noted; real cards answer
-  STORE DATA, so the R1 live path should not hit it).
+  implementation) answers `6D00` → lpac prints the `es10c_get_eid`
+  error JSON **then** core-dumps (w19:pK frame-by-frame: the crash is
+  post-error cleanup, reachable on *any* card-error SW ending an ES10
+  exchange — **R1 interpretation caveat: a live die-after-error-JSON is
+  this bug, not a transport finding**).
 - Response parsing is case-folding upstream (`input[i] | ' '`), so the
   uppercase patch cannot break RX.
 
@@ -716,6 +718,31 @@ success (driver pcsc path, uppercase) and the bench ×3 failures
 (lowercase at the ISD-R SELECT, each failed run leaking its opened
 channel) are now reconciled by one mechanism with exhaustion as a
 secondary compounding effect.
+
+**Defect-independence clarification** (reviewer, sharpening the
+"symptoms" framing): three *independent* defects are now in evidence,
+none requiring the enabled-profile theory — (1) the client-side
+lowercase rejection (lpac TX; primary cause of the bench ×3), (2) the
+modem's channel-**close** refusal (observed with uppercase probes too —
+a real firmware defect in its own right, NOT a symptom of the case
+bug), and (3) channel-exhaustion on open (`6A81`), which is the
+*downstream symptom* of (2) plus failed runs leaking channels. In the
+old bench narrative, (3) was read as evidence of session incoherence;
+it is now a symptom of (2). The `61 21`/`6A82` SELECT anomalies remain
+the only unexplained observations (R2's scope).
+
+**Upstream reporting decision** (reviewer's call on the bundling
+question): do **not** bundle. File two separate, owner-gated artifacts:
+(a) a comment on the existing lpac #428 adding RG502Q-EA as a second
+Qualcomm-class data point — wire captures from the rehearsal plus the
+maintainer's own unimplemented `LPAC_APDU_AT_HEX=UPPER` suggestion; and
+(b) a new issue for the post-error-cleanup segfault (own reproducer and
+transcript), cross-referencing #428 only. Separate threads for separate
+bugs keeps triage clean. Sequencing: file **after R1's live wire
+capture** — the offline prediction is strong, but the upstream claim
+should carry the live confirmation, and the report must stay
+species-level (mock artifacts and public AIDs only; no bench context,
+no identifiers).
 
 R1 on-router is now a *confirmation* run, not an exploration run.
 
