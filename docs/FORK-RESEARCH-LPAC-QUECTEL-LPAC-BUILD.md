@@ -163,6 +163,53 @@ exchanges (v4.0 soak: p50 400 ms round-trips), so read-only scope is
 plausible; the write window should stay on paced transports (our pcscd
 driver chain, or an mss/pacing-hardened lpac build).
 
+### Offline rehearsal — prediction CONFIRMED at wire level (w19:pJ, 2026-10-25)
+
+Both artifacts rebuilt x86 AT-only and run against
+`mock_modem.py --case-sensitive` (new Qualcomm-class lowercase-rejection
+fingerprint mode, committed `c33e7f7`, default off) over a pty bridge.
+Captures: `/tmp/opencode/r1-{stock,upper}-{atdebug,out}.log`.
+
+- **STOCK `a43e46ae`:** `AT`/`AT+CSIM=?` probes pass (the #447 refutation,
+  now live-confirmed); `AT+CSIM=10,"0070000001"` → `+CSIM: 6,"019000"`
+  (channel opens — digits only, case-irrelevant);
+  `AT+CSIM=42,"01a4040010a000…"` (ISD-R SELECT, lowercase) → **bare
+  `ERROR`** → `{"code":-1,"message":"euicc_init"}` — the exact bench
+  signature with the mechanism on the wire. The opened channel is **never
+  closed** (close lives in the success path).
+- **PIN + uppercase:** same open succeeds; uppercase SELECT
+  `02A404…A000000559…` → `+CSIM: 16,"6F048402A0009000"` — **FCI answered**,
+  ISD-R selected; proceeds into ES10 `getEID` STORE DATA
+  (`82E2910006BF3E035C035A` class) → mock answers `6D00` (mock implements
+  no STORE DATA) → lpac prints the `es10c_get_eid` error JSON and then
+  **segfaults** in the post-error path (see below). Real ISD-R answers
+  STORE DATA, so R1 live is not expected to hit it.
+- **RX safety:** lpac's receive-side hex parsing case-folds (`| 0x20`) —
+  the uppercase TX patch cannot break RX decoding of modem responses
+  (which come back uppercase anyway).
+- **Hypothesis reconciliation (the important one):** the lanes' original
+  *channel-exhaustion* hypothesis and the *case-bug* are now one causal
+  chain — case-bug → init fails fast → `logic_channel_close` never runs →
+  channel leak per attempt → compounding exhaustion. The bench's
+  `6A81`-after-2–3-opens and refused closes slot in as **downstream
+  symptoms**, not an independent mechanism. Case-bug primary; exhaustion
+  secondary/compounding.
+- **Status change for R1:** on-router R1 is now a **confirmation run, not
+  exploration** — the mock fingerprint (pySim/#428 shape) predicts: bare
+  `ERROR` on the lowercase SELECT from stock, `+CSIM:` FCI from the
+  uppercase build.
+
+**New upstream lpac bug observed (candidate report — filing is an owner
+decision, external publish):** on a card-error SW for an ES10 STORE DATA
+exchange (mock `6D00` after a successfully selected ISD-R), the CLI prints
+the correct `es10c_get_eid` error JSON and then crashes
+(`timeout(1)`: "the monitored command dumped core") — i.e. the failure is
+in the post-error cleanup/exit path, reachable any time an ES10 exchange
+ends in a card-error SW. Reproducer: stock-or-upper x86 AT build +
+`mock_modem.py --case-sensitive` pty bridge + `r1-upper-*` transcript
+(above). Suggested report title: "lpac CLI segfaults after card-error SW
+on ES10 STORE DATA (at_csim path)".
+
 ## 4. Field reports (forums/issues) — challenges and solutions
 
 | Report | Where | Relevance |
@@ -183,13 +230,17 @@ driver chain, or an mss/pacing-hardened lpac build).
 ## 5. Impact on the ladder (proposed amendments, for the lanes' verdicts)
 
 - **R1 (at_csim probe):** keep exactly as planned (free, wire-captured).
-  Pre-register the hex-case prediction: if the modem answers `ERROR` (or
-  silence) to lowercase `AT+CSIM` PDUs while our uppercase C0 battery passed,
-  mechanism found. Add the **second artifact** for discrimination:
-  pin + uppercase `hexutil.c` (+ #446 recommended to bound any silent hangs).
-  A success there re-ranks the whole AT path for the read-only milestone
-  without touching composition. #447/#448 are `at`-backend patches and do
-  not gate this rung.
+  ~~Pre-register the hex-case prediction~~ — **prediction confirmed offline**
+  (§3 rehearsal): stock fails at the lowercase ISD-R SELECT with bare
+  `ERROR` (bench signature); the uppercase build gets the FCI answered.
+  On-router R1 is a confirmation run against the real modem. Keep the
+  **second artifact** (pin + uppercase `hexutil.c`, + #446 recommended to
+  bound any silent hangs) — a live success re-ranks the whole AT path for
+  the read-only milestone without touching composition. #447/#448 are
+  `at`-backend patches and do not gate this rung. One rehearsal caveat to
+  carry: the uppercase build's ES10 path segfaults on card-error SWs
+  (§3) — real ISD-R answers STORE DATA, but if the live run dies *after*
+  printing an ES10 error JSON, that's this bug, not a transport finding.
 - **R2 (C0 battery):** unchanged; its uppercase framing now doubles as the
   hex-case control experiment.
 - **R3a (factory QMI + feed lpac/uqmi):** unchanged and further corroborated
@@ -215,12 +266,19 @@ driver chain, or an mss/pacing-hardened lpac build).
 
 ## 6. Cheap follow-ups if the lanes want them
 
-1. R1 wire capture review vs the pySim transcript shape (minutes, after R1).
+1. R1 wire capture review vs the mock/pySim fingerprint — now a
+   confirmation checklist (minutes, after R1).
 2. Uppercase-patched build via the lane's existing `build-lpac-openwrt.sh`
-   (one-line sed into the pinned tree or a patch file in the build repo).
+   (one-line sed into the pinned tree or a patch file in the build repo);
+   mock-mode dry-run of the mipsel artifacts via `mock_modem.py
+   --case-sensitive` before deployment.
 3. If R3a is reached: install-check fildunsky's mt7621 apk alongside the
    feed package (different `LPAC_DRIVER_HOME` wrapper shape — good packaging
    cross-reference for our own artifacts).
+4. Upstream report of the post-error segfault (draft title/transcript in
+   §3) — **owner decision** (external publish); would also be the natural
+   vehicle to re-raise #428's uppercase fix with a second Qualcomm-class
+   data point (RG502Q-EA) attached.
 
 ## Source index
 
