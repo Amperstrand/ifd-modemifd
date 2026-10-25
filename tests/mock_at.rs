@@ -758,3 +758,74 @@ fn transmit_rejects_null_pointers() {
     assert_eq!(rc, IFD_COMMUNICATION_ERROR);
     assert_eq!(m.delivered(), 0);
 }
+
+// --- RG502Q-EA wire-format regression pins (2026-10-25 findings) ---
+//
+// The modem parses AT+CSIM command hex case-sensitively and answers a
+// bare ERROR to lowercase payloads (pySim gerrit 8e15c18 / lpac #428
+// class); a 4-byte MANAGE CHANNEL close is dropped as malformed while
+// the 5-byte form (P3=00) returns 9000. These tests pin the emission
+// so a refactor cannot silently regress either form.
+
+#[test]
+fn bin2hex_emits_uppercase_only() {
+    for b in 0..=255u8 {
+        let s = ifd_modemifd::at::bin2hex(&[b]);
+        assert!(
+            !s.chars().any(|c| c.is_ascii_lowercase()),
+            "lowercase hex leaked for byte {b:#04x}: {s}"
+        );
+    }
+}
+
+#[test]
+fn csim_command_emission_is_uppercase() {
+    let lines = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = Arc::clone(&lines);
+    let m = MockModem::spawn(Arc::new(move |conn, line, _| {
+        sink.lock().unwrap().push(line.to_string());
+        echo(conn, line);
+        csim_ok(conn, "9000");
+    }));
+    let r = reader_of(&m);
+    let apdu = [0x0a, 0xb4, 0xf4, 0x0c, 0xef]; // letters in every nibble position
+    r.transmit_with_timeout(&apdu, Duration::from_millis(500))
+        .expect("ok");
+    let lines = lines.lock().unwrap();
+    let csim_line = lines
+        .iter()
+        .find(|l| l.starts_with("AT+CSIM="))
+        .expect("a CSIM line was delivered");
+    assert!(
+        !csim_line.chars().any(|c| c.is_ascii_lowercase()),
+        "lowercase hex in CSIM command: {csim_line}"
+    );
+    assert!(csim_line.contains("0AB4F40CEF"), "wrong encoding: {csim_line}");
+}
+
+#[test]
+fn normalize_closes_use_the_five_byte_form() {
+    let lines = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = Arc::clone(&lines);
+    let m = MockModem::spawn(Arc::new(move |conn, line, _| {
+        sink.lock().unwrap().push(line.to_string());
+        echo(conn, line);
+        csim_ok(conn, "9000");
+    }));
+    let r = reader_of(&m);
+    r.normalize();
+    let lines = lines.lock().unwrap();
+    assert!(
+        lines.iter().any(|l| l.contains("0170800100")),
+        "5-byte close for channel 1 missing: {lines:?}"
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("0270800200")),
+        "5-byte close for channel 2 missing: {lines:?}"
+    );
+    let malformed_closes = lines
+        .iter()
+        .filter(|l| l.starts_with("AT+CSIM=8,") && l.contains("7080"))
+        .count();
+    assert_eq!(malformed_closes, 0, "4-byte close form leaked: {lines:?}");
+}
