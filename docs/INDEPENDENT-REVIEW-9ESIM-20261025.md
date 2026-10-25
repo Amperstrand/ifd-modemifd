@@ -473,6 +473,41 @@ asked for GO.
 | Disable-before-download | **Rejected as a default step; contingency only** | SGP.22 download is ISD-R-scoped/additive; vendor tooling operates on enabled-profile cards; preservation asymmetry | enable-ladder failure indicating profile-state interference (runbook's own contingency path) |
 | External reader | Last-resort fallback (staged, triple-gated) | class-proven but off-product workflow; product constraint prefers on-device | D3 gate failure |
 
+### Owner-constraint addendum (2026-10-25 evening broadcast — final)
+
+- **External CCID reader eliminated by owner constraint** (not a
+  technical review outcome; the #459 review amendments stand as record,
+  the concurrence draft was never posted — moot). Option D is struck
+  from the matrix.
+- **Card stays seated in the NR7101.** The v4.0 shape (host pcscd +
+  NR7101 as reader from a separate computer) is out of scope.
+- **Next milestone: read-only 9eSIM operations from tooling compiled +
+  installed on the NR7101.** AT commands and pcscd/lpac-on-router are
+  both in scope. No disagreement-ledger entry — a constraint, not a
+  claim.
+- **Matrix effect**: Option A splits into *AT-on-router* (lpac at_csim;
+  the mipsel artifact is already deployed on the router) and
+  *A-router-PCSC* (on-router pcscd + this driver over a loopback bridge
+  — note the driver's direct-serial transport is unimplemented; the
+  loopback socat bridge shape is required). Option C is unchanged and
+  its read-only gates (D2/D3) are promoted from gate to milestone
+  content. Option D struck.
+- **Reviewer ordering input** (for the architecture lane's pending
+  ordering verdict — evidence-ranked, all read-only, all on-router):
+  **R1** lpac at_csim `chip info` immediately after a CFUN recycle,
+  with `AT_DEBUG` wire capture (source-verified env in the pinned
+  at_csim backend; artifact already on-router) — decides §A.3
+  (exhaustion hypothesis) at zero deploy cost. **R2** the corrected C0
+  battery (`ade4c77`, length-audited, class-A read-only, under
+  modem-lane lock) — decides §A.4 mechanisms. **R3** the MBIM read-only
+  gate (single composition switch, `SKIP_SLOT_MAPPING` protocol D2,
+  chip-info soak D3) — the only rung that also unlocks later
+  provisioning. **R4** on-router pcscd + driver + loopback bridge —
+  pursue only if a PC/SC surface on the router is itself a goal; it is
+  not needed for lpac-direct provisioning. Every R1/R2 outcome
+  cheapens or redirects R3; R3 remains the strategic unlock.
+- Reopeners: none for the constraint itself; existing rows unchanged.
+
 ---
 
 ## G. Answers to the standing review questions
