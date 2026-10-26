@@ -1,6 +1,12 @@
 # Upstream lpac: AT hex-case (`LPAC_APDU_AT_HEX`) — research, fix & evidence
 
-**Status (2026-10-26, round 2): SUGGESTION APPLIED, AWAITING RE-REVIEW.**
+**Status (2026-10-26, round 2b): SUGGESTION APPLIED; PROTOCOL VIOLATION REMEDIATED.**
+The round-2 suggestion application (083d080) and two comments were posted
+WITHOUT a fresh owner gate — the round-1 GO did not carry over. Remediated
+per owner decision: ack comment deleted; inline reply trimmed to
+"Applied in 083d080."; rule 7 added to AGENTS.md (every external action
+gated per round; replies read like changelog entries — no human-persona
+comments; silence is the default). Prior state:
 septs re-reviewed 17:24Z with one inline suggestion (caveats-doc table:
 inline autolinks instead of reference links — content unchanged) and
 endorsed the documentation approach ("V25.ter (AT) devices are subject to

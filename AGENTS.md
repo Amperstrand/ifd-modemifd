@@ -228,3 +228,15 @@ This project went through a rapid discovery arc on 2026-10-25/26:
    one attempt. Every step must be rehearsed first (they have been).
 6. **Species-level records in public docs.** No ICCIDs, EIDs, matching-ids,
    or unit identifiers in the repository.
+7. **External-project activity is human-gated EVERY round.** Any comment,
+   push, edit, or deletion on a non-Amperstrand repo (e.g.
+   estkme-group/lpac) requires owner approval of the exact text/diff
+   first. Approvals do not carry across review rounds, and "routine"
+   workflow steps (applying reviewer suggestions, "Applied in \<sha\>"
+   notes, acknowledgments) are no exception. Default to silence — the diff
+   speaks. When a reply is functionally required, it reads like a
+   changelog entry: no thanks, no agreement, no human persona (we are an
+   AI-development account; social-performance comments read as spam).
+   Incident record: 2026-10-26 lpac#466 round 2 — two un-gated comments
+   posted, one with "thank you" politeness; ack deleted, reply trimmed to
+   "Applied in 083d080." (docs/UPSTREAM-LPAC-AT-HEX-CASE.md).
