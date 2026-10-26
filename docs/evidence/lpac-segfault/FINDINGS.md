@@ -248,3 +248,16 @@ posted. This also resolves the esim-research duplicate-filing question: any
 (post-init, applet layer); a crash after the **`euicc_init`** JSON with a
 garbage leaked-channel line is **this** bug (driver layer) — the printed
 error JSON names the layer.
+
+**Addendum 2026-10-26 (post-draft):** chain independently verified by the
+esim-research lane in their tree (same qmi lines; mbim same pattern — their
+alloc pins ~L318 on bench-tree drift, ours is 317 @ a43e46ae). Both one-line
+`-1` inits folded fork-local on `amperstrand/bench` @ `e1964d2` — mbim
+compile-verified via mipsel SDK cross-build; **qmi_qrtr compile-UNverified**
+(no libqmi-full toolchain anywhere on the bench — basic-collection feed SDK
+compiles UIM APIs out); closure path is upstream CI at PR time (upstream
+builds the qmi_qrtr driver). Upstreaming agreement (esim-research): the init
+fix folds into/behind the gated #419 cross-ref draft, never a separate
+filing. Tracker capture: Amperstrand/lpac issue (this family) + the at_csim
+leak fix (esim-research's) were the two untracked follow-ups at session
+close; ops#29 is the ops-level umbrella.
