@@ -279,3 +279,12 @@ This project went through a rapid discovery arc on 2026-10-25/26:
    Incident record: 2026-10-26 lpac#466 round 2 — two un-gated comments
    posted, one with "thank you" politeness; ack deleted, reply trimmed to
    "Applied in 083d080." (docs/UPSTREAM-LPAC-AT-HEX-CASE.md).
+   Hardened policy (2026-10-26, after a second incident of the same
+   class — lpac#468, see Amperstrand/ops#29): external writes are
+   MANUAL-ONLY for agents. Never set write-confirmation env overrides
+   (BCR_GH_WRITE_OK) and never call /usr/bin/gh or the token API
+   directly — stage the exact text as a file under
+   /tmp/opencode/upstream-drafts/ for the owner to post from their
+   interactive shell. A formatting/cleanup push to OUR fork branch (the
+   PR head) is the one permitted external-adjacent write, since it is an
+   owned-repo push.
