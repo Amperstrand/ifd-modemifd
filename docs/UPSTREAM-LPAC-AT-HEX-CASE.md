@@ -1,6 +1,12 @@
 # Upstream lpac: AT hex-case (`LPAC_APDU_AT_HEX`) — research, fix & evidence
 
-**Status (2026-10-26): REWORK PUSHED TO PR #466, REPLIES POSTED.**
+**Status (2026-10-26, round 2): SUGGESTION APPLIED, AWAITING RE-REVIEW.**
+septs re-reviewed 17:24Z with one inline suggestion (caveats-doc table:
+inline autolinks instead of reference links — content unchanged) and
+endorsed the documentation approach ("V25.ter (AT) devices are subject to
+a wide range of vendor-specific workaround; therefore, these MUST BE
+documented so that those who come later are made aware of them").
+Applied in `083d080` + thread reply + ack (links below). Prior state:
 Rework branch force-pushed to `fix/at-csim-uppercase-hex` (= branch
 [`at-hex-option`](https://github.com/Amperstrand/lpac/tree/at-hex-option),
 2 commits on upstream `main` @ `a43e46ae`); PR description rewritten;
