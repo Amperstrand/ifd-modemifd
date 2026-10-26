@@ -213,7 +213,7 @@ Rephrasing policy per owner GO: comply fully, `LOWER` default kept, spec
 observation recorded once as a falsifiable note, zero advocacy — priority is
 merge + not coming across as opinionated.
 
-### 7.1 PR #466 (title + description)
+### 7.1 PR #466 title + description — live: https://github.com/estkme-group/lpac/pull/466 (head b70a31c)
 
 Title: `apdu/at: add LPAC_APDU_AT_HEX option — some modems reject lowercase AT hex payloads`
 
@@ -270,7 +270,7 @@ Title: `apdu/at: add LPAC_APDU_AT_HEX option — some modems reject lowercase AT
 >
 > Tested on x86 and mipsel (OpenWrt) against the modem above.
 
-### 7.2 Reply to septs' review (posted as PR comment)
+### 7.2 Reply to septs' review — posted: https://github.com/estkme-group/lpac/pull/466#issuecomment-6419586126
 
 > Thanks — both points addressed in the rework:
 >
@@ -283,7 +283,7 @@ Title: `apdu/at: add LPAC_APDU_AT_HEX option — some modems reject lowercase AT
 >    `euicc/hexutil.c` is back to stock and the global digits-table flip is
 >    dropped.
 
-### 7.3 Reply to CoelacanthusHex (posted as PR comment)
+### 7.3 Reply to CoelacanthusHex — posted: https://github.com/estkme-group/lpac/pull/466#issuecomment-6419586475
 
 > @CoelacanthusHex Agreed — that's why the default is unchanged and uppercase
 > is strictly opt-in. For the record: we searched the public record for a modem
