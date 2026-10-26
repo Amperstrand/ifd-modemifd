@@ -1,0 +1,47 @@
+#!/bin/sh /etc/rc.common
+# modem-guard — NR7101 board-level modem reset hygiene.
+# Fix 1 (community-proven, OpenWrt forum t/172413, bmork design, Lynx
+# confirmed): the NR7101 hardware lets the host reboot WITHOUT resetting
+# the modem — assert the modem RESET line at shutdown so every reboot
+# starts the modem clean. Fix 2: boot-time health check — if the modem
+# did not enumerate, pulse the line once before giving up (guarded off
+# during modem firmware writes via /tmp/modem-fw-write marker).
+# GPIO numbering: sysfs base 512 on kernel 6.12 (base 480 on older) —
+# the line is DTS gpio3, sysfs gpio515 / gpio483 respectively; uci
+# system.lte_reset names it. We compute from the gpiochip, not hardcode.
+
+START=99
+STOP=10
+RESET_GPIO_LINE=3   # DTS gpio number of the modem RESET line
+
+_sysfs_number() {
+  for chip in /sys/class/gpio/gpiochip*; do
+    [ -f "$chip/ngpio" ] || continue
+    base=${chip##*gpiochip}
+    echo $(( base + RESET_GPIO_LINE ))
+    return 0
+  done
+}
+
+boot_health_check() {
+  [ -e /tmp/modem-fw-write ] && return 0   # never pulse during FW writes
+  sleep 20                                  # let USB settle
+  ls /dev/ttyUSB* >/dev/null 2>&1 && return 0
+  logger -t modem-guard "boot: modem absent — pulsing RESET line once"
+  G=$(_sysfs_number)
+  echo "$G" > /sys/class/gpio/export 2>/dev/null
+  echo out > /sys/class/gpio/gpio$G/direction 2>/dev/null
+  echo 1 > /sys/class/gpio/gpio$G/value; sleep 1; echo 0 > /sys/class/gpio/gpio$G/value
+  echo "$G" > /sys/class/gpio/unexport 2>/dev/null
+}
+
+start() { boot_health_check; }
+
+shutdown() {
+  # bmork's fix: leave the modem IN RESET at shutdown; boot scripts release it.
+  [ -e /tmp/modem-fw-write ] && return 0
+  G=$(_sysfs_number)
+  echo "$G" > /sys/class/gpio/gpio export 2>/dev/null
+  echo "$G" > /sys/class/gpio/export 2>/dev/null
+  [ -d /sys/class/gpio/gpio$G ] && { echo 1 > /sys/class/gpio/gpio$G/value; logger -t modem-guard "shutdown: modem held in reset for clean next boot"; }
+}
