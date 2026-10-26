@@ -76,6 +76,28 @@ is in `refresh.sh`.
   attach events; (b) ports present, zero responses on any port. On either:
   **DEFAULT-STOP** — no further resets, no ladder flailing.
 
+## Pre-physical rungs (added 2026-10-26, owner-challenged research)
+
+Hardware truth (DTS-verified): the board exposes only `lte-pwrkey`
+(gpio4) and `lte-power` (gpio18) — no VBUS switch, no hub, no reset
+line. USB power is hardwired; no software path equals the physical
+cut. However, three host-side steps precede any physical action:
+
+1. **USB-stick discriminator**: plug a USB stick into the external
+   USB-A port. Works → host controller healthy → hang is modem-side
+   (rungs 2-3 are long shots; cut stands). Dead → the HOST controller
+   is wedged → rung 2 is likely THE fix (and prior rail-cutting was
+   irrelevant to that shape).
+2. **Host-controller unbind/rebind** — full HC+PHY reset, documented
+   recovery class for dead-controller states (unbind/bind of the
+   xhci-mtk / ehci-platform platform drivers).
+3. **USBDEVFS_RESET** on the modem's device node (silent-but-on-bus
+   shape only — the node must exist).
+
+Cost: ~2 minutes, host-side only — does NOT touch the modem, does NOT
+consume the vendor op budget. Off-bus wedges (device electrically
+absent, zero attach events) skip straight to the physical rungs.
+
 ## Recovery rungs (in order, all proven 2026-10-25)
 
 1. `sysfs gpio515` (RESET_N; not DTS-hogged): pulse 1 s.
