@@ -14,8 +14,8 @@ referenced procedures to go from a stock NR7101 to a working eSIM router.
 
 | Component | What | Notes |
 |---|---|---|
-| Router | Zyxel NR7101 (OpenWrt 25.12.6, ramips/mt7621) | IPQ8072A SoC, MT7621, no WiFi |
-| Modem | Quectel RG502Q-EA (soldered) | firmware RG502QEAACR13A02M4G_ZYXEL — see #38 for upgrade track |
+| Router | Zyxel NR7101 (OpenWrt 25.12.6, ramips/mt7621) | MediaTek MT7621 SoC, no WiFi |
+| Modem | Quectel RG502Q-EA (soldered) | firmware RG502QEAACR13A03M4G_ZYXEL (live AT+CGMR 2026-10-26; earlier "13A02" strings here were stale) — see #38 for upgrade track |
 | SIM | 9eSIM (ECP3-class eUICC) | removable, sits in modem slot 2 |
 | Bench | Any Linux host with SSH to the router | this repo assumes 192.168.1.10 on br-lan |
 
@@ -137,7 +137,7 @@ ssh root@ROUTER 'AT+QCCID → should show the new ICCID; AT+CEREG? → should re
                     └────────┬────────┘
                              │ SIM interface
                     ┌────────┴────────┐
-                    │  RG502Q-EA modem│ (AACR13A02 firmware)
+                    │  RG502Q-EA modem│ (AACR13A03 firmware)
                     │  QMI or ECM mode│
                     └────────┬────────┘
                              │ USB (option/cdc_ether/qmi_wwan)
@@ -203,7 +203,7 @@ This project went through a rapid discovery arc on 2026-10-25/26:
    processing. The custom pcscd/IFD driver approach (this repo's original
    purpose) is no longer the recommended path for provisioning.
 
-3. **"Why does the modem wedge?"** → Firmware AACR13A02 has a USIM re-init
+3. **"Why does the modem wedge?"** → Firmware AACR13A03 has a USIM re-init
    fragility: any profile-change + modem reset (CFUN, REFRESH, or natural
    reboot) can hang the modem's USB controller. Probabilistic, correlates
    with reset debt, only recovers via physical power cut. The refresh
@@ -228,3 +228,15 @@ This project went through a rapid discovery arc on 2026-10-25/26:
    one attempt. Every step must be rehearsed first (they have been).
 6. **Species-level records in public docs.** No ICCIDs, EIDs, matching-ids,
    or unit identifiers in the repository.
+7. **External-project activity is human-gated EVERY round.** Any comment,
+   push, edit, or deletion on a non-Amperstrand repo (e.g.
+   estkme-group/lpac) requires owner approval of the exact text/diff
+   first. Approvals do not carry across review rounds, and "routine"
+   workflow steps (applying reviewer suggestions, "Applied in \<sha\>"
+   notes, acknowledgments) are no exception. Default to silence — the diff
+   speaks. When a reply is functionally required, it reads like a
+   changelog entry: no thanks, no agreement, no human persona (we are an
+   AI-development account; social-performance comments read as spam).
+   Incident record: 2026-10-26 lpac#466 round 2 — two un-gated comments
+   posted, one with "thank you" politeness; ack deleted, reply trimmed to
+   "Applied in 083d080." (docs/UPSTREAM-LPAC-AT-HEX-CASE.md).
