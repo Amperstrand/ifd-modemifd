@@ -152,10 +152,9 @@ Full diff in `fix.patch`; shape:
   qmi_qrtr backend, `euicc_init` error JSON printed then SIGSEGV, *probabilistic*
   ("almost every try, not 100%"), and it even logs `Cleaning up leaked APDU
   channel 1662901524` — a garbage channel number, itself an uninitialized-variable
-  tell. **Same bug family as ours** (post-error teardown), different backend and
-  slightly different exit path; a fix PR for the applet `_cleanup_` locals should
-  reference #419 as likely-fixed too. Not confirmed identical — #419's exact frame
-  wasn't captured by the reporter.
+  tell. ~~Same bug family as ours~~ **RESOLVED 2026-10-26 (see §9): related
+  meta-family but a DISTINCT bug — driver-layer, NOT fixed by the applet
+  zero-init.**
 - **#406 (CLOSED)** — coredump on `profile discovery -i IMEI`: **not** our family;
   root-caused separately as a buffer overflow in `euicc_hexutil_gsmbcd2bin` with
   15-digit IMEIs, fixed by #415 (`80c8268`, "fix BOF … reached when setting IMEI").
@@ -216,3 +215,36 @@ Amperstrand/lpac#1 should be improved as follows before any owner-GO'd posting
   `segfix/fixed-run.out`.
 - All mock/socat processes reaped by PID; workspace `git status` shows no
   artifacts from this dig (early-cwd strays moved to the dig dir).
+
+## 9. #419 teardown read (2026-10-26, this lane) — DISTINCT root cause
+
+Follow-up: the teardown code-read §6 deferred ("not confirmed identical").
+Verdict: **#419 is NOT the applet bug and is NOT fixed by the zero-init PR
+(#467)** — different layer, different variable, different fix. Chain verified
+by code-read at `a43e46ae` against #419's public transcript (line-for-line
+match):
+
+1. `qmi_qrtr.c:82` — `qmi_priv = malloc(sizeof(struct qmi_data))`, **unzeroed**;
+   `lastChannelId` = heap garbage (reporter's `1662901524` = `0x63000054`).
+2. `qmi_common.c:90` — `lastChannelId` assigned **only on successful open**;
+   the QMI-error-94 path returns at `:81-84` before it → garbage survives.
+3. `euicc.c` `euicc_init` failure path **disconnects** (open fails →
+   `disconnect(ctx)`): `qmi_common.c:137-141` NULLs `uimClient`/`context`.
+4. `lpac.c:225` `euicc_driver_fini` → `qmi_qrtr.c:110` → `qmi_cleanup`
+   (`qmi_common.c:144`): garbage `> 0` passes the `<= 0` guard → prints the
+   "Cleaning up leaked APDU channel" line → `logic_channel_close` calls libqmi
+   with the **released/NULL client+context** → SIGSEGV.
+   Probabilistic shape = malloc garbage ≤ 0 on some runs → early return.
+
+Minimal fix: `qmi_priv->lastChannelId = -1;` after the malloc (mirrors
+`gbinder_hidl.c:28` static `-1` precedent) or `calloc`. `mbim.c:317` has the
+same unzeroed-alloc + `last_channel_id` pattern (`:287` print) — same
+treatment warranted; gbinder is safe.
+
+Owner-gated cross-ref draft written: `issue-419-crossref-comment.md`
+(mirrored in `docs/upstream-reports/`). Filing is owner-GO only; nothing
+posted. This also resolves the esim-research duplicate-filing question: any
+"invalid write to NULL after ES10 JSON" crash is the **#467** family
+(post-init, applet layer); a crash after the **`euicc_init`** JSON with a
+garbage leaked-channel line is **this** bug (driver layer) — the printed
+error JSON names the layer.
