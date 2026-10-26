@@ -1,11 +1,15 @@
 # Upstream lpac: AT hex-case (`LPAC_APDU_AT_HEX`) — research, fix & evidence
 
-**Status (2026-10-26): REWORK PREPARED, UPSTREAM ACTIVITY HUMAN-GATED.**
-Branch [`at-hex-option`](https://github.com/Amperstrand/lpac/tree/at-hex-option)
-(Amperstrand fork, 2 commits on upstream `main` @ `a43e46ae`) reworks PR
-[estkme-group/lpac#466](https://github.com/estkme-group/lpac/pull/466) per
-maintainer review. Nothing is pushed to the PR or commented upstream until the
-owner says GO — the estkme-group repo is an external project.
+**Status (2026-10-26): REWORK PUSHED TO PR #466, REPLIES POSTED.**
+Rework branch force-pushed to `fix/at-csim-uppercase-hex` (= branch
+[`at-hex-option`](https://github.com/Amperstrand/lpac/tree/at-hex-option),
+2 commits on upstream `main` @ `a43e46ae`); PR description rewritten;
+review + comment replies posted (owner GO 2026-10-26: "force update the
+pull request as they requested ... most important is to get things merged
+and to not come across as too opinionated"). Position on the default:
+mild disagreement recorded once, neutrally — spec examples are uppercase-
+only and no lowercase-only modem was found — but the default stays `LOWER`
+per maintainer preference. Merge > opinion.
 
 This document is the **candidate-for-upstream record**: every claim, its
 source, how it was verified, and how to reproduce it with similar hardware.
@@ -203,92 +207,98 @@ operations or secure-channel commands from these probes (see
 `tests/hardware/README.md` doctrine). Species-level rule: no ICCIDs, EIDs,
 matching-ids or unit identifiers in public artifacts.
 
-## 7. GATED: proposed upstream texts (NOT posted)
+## 7. Upstream texts (as posted 2026-10-26)
 
-### 7.1 PR #466 description rewrite (on GO: force-push `at-hex-option` → `fix/at-csim-uppercase-hex`)
+Rephrasing policy per owner GO: comply fully, `LOWER` default kept, spec
+observation recorded once as a falsifiable note, zero advocacy — priority is
+merge + not coming across as opinionated.
+
+### 7.1 PR #466 (title + description)
+
+Title: `apdu/at: add LPAC_APDU_AT_HEX option — some modems reject lowercase AT hex payloads`
 
 > ### Problem
 >
 > The AT backends (`at`, `at_csim`) encode APDUs with `euicc_hexutil_bin2hex`,
-> which emits **lowercase** hex. Some modems parse `AT+CSIM`/`AT+CGLA`
-> payloads case-sensitively and answer a bare `ERROR` to lowercase —
-> documented in the wild for Qualcomm-based modules (Sierra EM7565 via pySim,
-> Foxconn T99W696 in #428, Quectel RG502Q-EA below). The result is
-> `euicc_init` failing on otherwise fully capable modems.
+> which emits **lowercase** hex. Some modems parse `AT+CSIM`/`AT+CGLA` payloads
+> case-sensitively and answer a bare `ERROR` to lowercase — documented in the
+> wild for Qualcomm-based modules (Sierra EM7565 via pySim, Foxconn T99W696 in
+> #428, Quectel RG502Q-EA below). The result is `euicc_init` failing on
+> otherwise fully capable modems.
 >
-> ### Root cause is spec-side, not a modem bug
+> ### Why these modems behave this way
 >
 > TS 27.007 §8.17 defines the `+CSIM` payload as *"hexadecimal character
-> format; refer +CSCS"*, and the `+CSCS` **HEX** character set (§5.3) is
-> defined — and every example given ("00 to FF", "032FE6") — with uppercase
-> digits only. Strict parsers rejecting lowercase are conformant; the
-> lowercase emission is the tolerated-by-most, out-of-spec-letter form.
+> format; refer +CSCS"*, and the `+CSCS` "HEX" character set (§5.3) is defined
+> — with every example given ("00 to FF", "032FE6") — using uppercase digits
+> only. Parsers that reject lowercase are conformant to the letter of the spec;
+> the lowercase form is only accepted by tolerant implementations, which is
+> likely why the behavior recurs across vendors.
 >
-> ### This PR (reworked per review)
+> ### Changes (reworked per review)
 >
-> - `LPAC_APDU_AT_HEX` option (`UPPER`/`LOWER`, case-insensitive, default
->   `LOWER` = today's behavior), scoped to the AT drivers only: it transforms
->   just the hex strings emitted inside AT commands (`AT+CSIM`,
->   `AT+CGLA`, `AT+CCHO` AID). `euicc/hexutil.c` stays untouched.
+> - New option `LPAC_APDU_AT_HEX` (values `UPPER`/`LOWER`, case-insensitive,
+>   default `LOWER` — today's behavior unchanged), scoped to the AT drivers
+>   only: it transforms just the hexadecimal strings emitted inside AT commands
+>   (`AT+CSIM`, `AT+CGLA`, `AT+CCHO` AID). `euicc/hexutil.c` is untouched (the
+>   global digits-table flip from the first revision of this PR is dropped).
 > - `docs/backends/at.md` documents the option.
 > - `docs/DEVICE-SPECIFIC-CAVEATS.md` gains an entry listing the affected
->   modems with all sources (pySim change 24023 / commit 8e15c18, #428, this
->   PR's wire captures) and the spec note.
+>   modems with sources (pySim change 24023 / commit `8e15c18`, #428, the wire
+>   captures below) and the spec note.
 >
 > ### Evidence (live, Quectel RG502Q-EA, firmware RG502QEAACR13A03M4G)
 >
-> Same SELECT, only case differs (2026-10-26 read-only battery, log excerpt):
+> Read-only battery, 2026-10-26 — same SELECT, only the letter case differs:
 >
 >     AT+CSIM=14,"00A4000C022FE2"  ->  +CSIM: 4,"9000"
 >     AT+CSIM=14,"00a4000c022fe2"  ->  ERROR
 >
-> With uppercase emission a complete SGP.22 profile download (mutual auth +
-> BPP install) ran over `AT+CSIM` on this modem in ~24 s. An offline mock
-> (`--case-sensitive` mode) reproduces the same discrimination for all four
-> option states (default/UPPER/upper/garbage→default).
+> With uppercase emission a complete SGP.22 profile download (server mutual
+> auth + BPP install) ran over `AT+CSIM` on this modem in ~24 s. An offline
+> mock reproduces the same discrimination for all four option states
+> (default / UPPER / lowercase-spelling / invalid value → default).
 >
-> ### On the default
+> ### Note on the default
 >
-> No modem requiring lowercase has been documented anywhere we could find,
-> so a spec-literal `UPPER` default would likely be safe — but since neither
-> case is mandated for the TE, this keeps `LOWER` as the zero-change default
-> and makes uppercase opt-in. Happy to flip the default in a follow-up if
-> maintainers prefer.
+> The default stays `LOWER`, so nothing changes for existing users. For the
+> record (also kept in the caveats doc, so it stays falsifiable rather than a
+> claim): we could not find any modem documented to *require* lowercase, and
+> the spec's HEX examples are all uppercase — but neither case is mandated for
+> the TE, so keeping `LOWER` is the conservative choice. If a lowercase-only
+> modem ever surfaces, `LPAC_APDU_AT_HEX=LOWER` names that mode explicitly.
 >
 > Tested on x86 and mipsel (OpenWrt) against the modem above.
 
-### 7.2 Reply to septs' review
+### 7.2 Reply to septs' review (posted as PR comment)
 
-> Both points addressed:
+> Thanks — both points addressed in the rework:
+>
 > 1. `docs/DEVICE-SPECIFIC-CAVEATS.md` now has an entry for this class
->    (affected modems table + spec note + all sources).
-> 2. Reworked as an option: `LPAC_APDU_AT_HEX=UPPER` (the name you suggested
->    in #428), values `UPPER`/`LOWER`, default `LOWER` — and it only affects
->    the AT drivers: the transform is applied solely to the hex strings
->    emitted inside AT commands (`AT+CSIM`, `AT+CGLA`, `AT+CCHO` AID);
->    `euicc/hexutil.c` is back to stock. The global digits-table flip is
+>    (affected-modems table + spec note + sources).
+> 2. Reworked as an option: `LPAC_APDU_AT_HEX` (the flag name suggested in
+>    #428), values `UPPER`/`LOWER`, default `LOWER` (no behavior change). It
+>    only affects the AT drivers — the transform is applied solely to the hex
+>    strings emitted inside AT commands (`AT+CSIM`, `AT+CGLA`, `AT+CCHO` AID);
+>    `euicc/hexutil.c` is back to stock and the global digits-table flip is
 >    dropped.
 
-### 7.3 Reply to CoelacanthusHex
+### 7.3 Reply to CoelacanthusHex (posted as PR comment)
 
-> Agreed that's the right call for a default, so the default is unchanged —
-> the option is strictly opt-in. For the record, we searched the public
-> record for a modem documented to *require* lowercase `AT+CSIM`/`AT+CGLA`
-> payloads and found none so far (noted honestly in the caveats doc, so the
-> claim stays falsifiable). The spec angle also seemed worth recording:
-> TS 27.007 routes `+CSIM` payloads through the `+CSCS` "HEX" character set,
-> which is defined and exemplified uppercase-only — strict parsers are
-> conformant, which likely explains why the behavior shows up across
-> vendors (Sierra EM7565 / Foxconn T99W696 / Quectel RG502Q-EA in our case).
-> If a lowercase-only modem ever surfaces, `LPAC_APDU_AT_HEX=LOWER` already
-> covers it explicitly.
+> @CoelacanthusHex Agreed — that's why the default is unchanged and uppercase
+> is strictly opt-in. For the record: we searched the public record for a modem
+> documented to *require* lowercase `AT+CSIM`/`AT+CGLA` payloads and found
+> none so far; that observation is kept in the caveats doc (with sources) so it
+> stays falsifiable rather than a claim. And if a lowercase-only modem does
+> surface, `LPAC_APDU_AT_HEX=LOWER` covers it explicitly. (The spec note in the
+> caveats doc suggests why strict parsers keep showing up across vendors: the
+> `+CSCS` "HEX" character set is defined and exemplified uppercase-only.)
 
-### 7.4 Optional cross-reference comment on #428 (after rework lands)
+### 7.4 NOT posted (held for after merge, if wanted)
 
-> The `LPAC_APDU_AT_HEX=UPPER` flag you suggested here is proposed in #466
-> (reworked per review), together with a DEVICE-SPECIFIC-CAVEATS entry
-> covering this issue's Foxconn T99W696, pySim's Sierra EM7565 fix (osmocom
-> change 24023), and a wire-captured Quectel RG502Q-EA case.
+One-line cross-reference comment on #428 pointing at the merged option and
+the caveats entry — posting it before the merge would add noise to two
+threads for no gain.
 
 ## 8. Source index (session-verified 2026-10-26)
 
