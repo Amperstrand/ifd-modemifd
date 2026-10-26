@@ -252,6 +252,17 @@ This project went through a rapid discovery arc on 2026-10-25/26:
    Follow-up work is parked as issues on Amperstrand/lpac (#1–#4) and
    this repo (#52, wedge forensics) — pick up there, not from chat logs.
 
+8. **Contribution preflight before any external PR prep.** Read the
+   target repo's CI FIRST (`tools/preflight/contrib-preflight.sh
+   OWNER/REPO` discovers formatter/lint requirements and versions from
+   `.github/workflows/`), pin the matching formatter major
+   (`~/tools/cfmt-20` for lpac's clang-format v20), and run the repo's
+   gates locally (`clang-format --dry-run --Werror`, `reuse lint`, tests)
+   BEFORE the branch leaves the bench. Fork PRs often sit at CI
+   `action_required` until a maintainer approves workflow runs — local
+   gates are the only pre-review gate we control. After pushing, watch
+   `gh pr checks` and fix CI findings with commits, never with comments.
+
 ## Rules of engagement for agents
 
 1. **Read the refresh policy before touching profiles.** The wedge matrix

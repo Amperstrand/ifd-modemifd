@@ -1,0 +1,65 @@
+# Router snapshot — wedge-dossier lane, 2026-10-26 (read-only, redacted)
+
+**Provenance:** the ONLY device interaction by the wedge-dossier lane this
+session, run after the main lane's soft baseline (19:21:51Z):
+
+    timeout 30 ssh -o ConnectTimeout=10 -o BatchMode=yes root@192.168.1.10 \
+      'cat /sys/kernel/debug/usb/devices 2>/dev/null | head -40; echo "=== dmesg tail ==="; dmesg | tail -20'
+
+No AT commands, no writes, no lpac, no lane lock taken (no device mutation).
+
+**Redactions:** modem USB serial and wwan0 MAC withheld (unit identifiers).
+Kernel 6.12.112 host.
+
+## Timeline reconstruction (all same boot, kernel-time continuous — no PoE cut)
+
+| Time (approx) | Event | Source |
+|---|---|---|
+| 18:11 | Router boot (parent-lane datum) | parent lane |
+| 18:18 | Speedtest profile active, CEREG **home** (Telia NO), MBIM-era state | session-state file (main lane, 19:16Z) |
+| 19:16Z | session-state written: MBIM control plane wedged, restore seq expects cold PoE + MBIM return | /tmp/opencode/session-state-nr7101-20261026.md |
+| <19:14Z | (Inferred) MBIM→QMI composition switch already completed: qmi_wwan bound **before** kernel 3805s; re-attach at 3820s is **Dev#=3**, implying ≥1 earlier enumeration since boot | dmesg below + devnum arithmetic |
+| ≈19:14:25Z (kernel 3805s) | Disconnect burst: option ttyUSB0-3 + `qmi_wwan 2-1:1.4 wwan0: unregister` | dmesg below |
+| ≈19:14:40Z (kernel 3820s) | Clean re-attach: `new SuperSpeed USB device number 3 using xhci-mtk`, option re-attaches ttyUSB0-3, `cdc-wdm0: USB WDM device`, `qmi_wwan … register` — **same QMI composition**, 15 s gap ⇒ modem reset / re-enumeration, NOT a composition switch and NOT a host reboot (kernel time continuous) | dmesg below |
+| 19:21:51Z | Main-lane soft baseline: QMI live (cdc-wdm0, wwan0 /30 addr), **CEREG 0,5 = ROAMING**, CSQ 20, FUNC_PORT ttyUSB3 | docs/evidence/wedge/baseline-soft-20261026.txt |
+| ~19:30Z | THIS snapshot (read-only) | this file |
+| 21:20 | Parent-lane probe: silent.link active, same boot | parent lane |
+
+**Key inference for profile attribution:** Speedtest@18:18 registered **home**;
+baseline@19:21:51 shows **roaming** (CEREG 0,5). The registration-state flip
+home→roaming plus QMI composition both landed in the 18:18→19:21:51Z window —
+i.e., the silent.link enable most likely completed **before 19:21:51Z**, not
+between 19:30 and 21:20. Mechanism (lpac-uqmi vs AT vs other) is NOT
+observable from this lane's evidence; the 18:18–19:21:51Z modem-lane lock
+holder holds the answer.
+
+## Raw output (redacted)
+
+usb/devices head-40: xhci-hcd root hubs bus1 (480M, 2ch) + bus2 (5000M, 1ch);
+modem 2c7c:0800 RG502Q-EA on bus2 port1, USB 3.20, SuperSpeed, 5 interfaces
+(if0-2 shown with Driver=option, bulk+int endpoints; serial redacted),
+MxPwr=896mA. Healthy topology identical to baseline-soft-20261026.txt.
+
+dmesg tail-20 (verbatim; sole alteration = trailing wwan0 MAC redacted):
+
+    [ 3805.818480] option1 ttyUSB0: GSM modem (1-port) converter now disconnected from ttyUSB0
+    [ 3805.834846] option 2-1:1.0: device disconnected
+    [ 3805.845051] option1 ttyUSB1: GSM modem (1-port) converter now disconnected from ttyUSB1
+    [ 3805.861464] option 2-1:1.1: device disconnected
+    [ 3805.871542] option1 ttyUSB2: GSM modem (1-port) converter now disconnected from ttyUSB2
+    [ 3805.888081] option 2-1:1.2: device disconnected
+    [ 3805.898448] option1 ttyUSB3: GSM modem (1-port) converter now disconnected from ttyUSB3
+    [ 3805.914860] option 2-1:1.3: device disconnected
+    [ 3805.924855] qmi_wwan 2-1:1.4 wwan0: unregister 'qmi_wwan' usb-1e1c0000.xhci-1, WWAN/QMI device
+    [ 3820.128055] usb 2-1: new SuperSpeed USB device number 3 using xhci-mtk
+    [ 3820.173583] option 2-1:1.0: GSM modem (1-port) converter detected
+    [ 3820.186537] usb 2-1: GSM modem (1-port) converter now attached to ttyUSB0
+    [ 3820.201219] option 2-1:1.1: GSM modem (1-port) converter detected
+    [ 3820.214208] usb 2-1: GSM modem (1-port) converter now attached to ttyUSB1
+    [ 3820.229260] option 2-1:1.2: GSM modem (1-port) converter detected
+    [ 3820.242287] usb 2-1: GSM modem (1-port) converter now attached to ttyUSB2
+    [ 3820.257350] option 2-1:1.3: GSM modem (1-port) converter detected
+    [ 3820.270210] usb 2-1: GSM modem (1-port) converter now attached to ttyUSB3
+    [ 3820.287237] qmi_wwan 2-1:1.4: cdc-wdm0: USB WDM device
+    [ 3820.299795] qmi_wwan 2-1:1.4 wwan0: register 'qmi_wwan' at usb-1e1c0000.xhci-1, WWAN/QMI device, <MAC redacted>
+
