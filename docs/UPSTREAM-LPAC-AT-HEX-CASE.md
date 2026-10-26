@@ -268,7 +268,11 @@ Title: `apdu/at: add LPAC_APDU_AT_HEX option — some modems reject lowercase AT
 > the TE, so keeping `LOWER` is the conservative choice. If a lowercase-only
 > modem ever surfaces, `LPAC_APDU_AT_HEX=LOWER` names that mode explicitly.
 >
-> Tested on x86 and mipsel (OpenWrt) against the modem above.
+> Verified on x86 against the modem above (option matrix: default / `UPPER` / lowercase
+> spelling / invalid value), plus an offline case-rejecting mock for all four states. The
+> mipsel/OpenWrt end-to-end on this modem (complete SGP.22 download over `AT+CSIM`) used
+> the equivalent one-line uppercase emission — byte-identical output to
+> `LPAC_APDU_AT_HEX=UPPER`.
 
 ### 7.2 Reply to septs' review — posted: https://github.com/estkme-group/lpac/pull/466#issuecomment-6419586126
 
