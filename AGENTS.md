@@ -14,7 +14,7 @@ referenced procedures to go from a stock NR7101 to a working eSIM router.
 
 | Component | What | Notes |
 |---|---|---|
-| Router | Zyxel NR7101 (OpenWrt 25.12.6, ramips/mt7621) | MediaTek MT7621 SoC, no WiFi |
+| Router | Zyxel NR7101 (OpenWrt 25.12.6, ramips/mt7621) | MediaTek MT7621 SoC; OpenWrt brings up an mt76 WiFi STA (`phy0-sta0`, management only — no default route) |
 | Modem | Quectel RG502Q-EA (soldered) | firmware RG502QEAACR13A03M4G_ZYXEL (live AT+CGMR 2026-10-26; earlier "13A02" strings here were stale) — see #38 for upgrade track |
 | SIM | 9eSIM (ECP3-class eUICC) | removable, sits in modem slot 2 |
 | Bench | Any Linux host with SSH to the router | this repo assumes 192.168.1.10 on br-lan |
@@ -126,6 +126,33 @@ ssh root@ROUTER 'AT+QCCID → should show the new ICCID; AT+CEREG? → should re
 2. If that fails: 20-second physical power cut (the only fix for deep wedges)
 3. See `docs/MODEM-REFRESH-POLICY.md` for the full recovery ladder
 
+## Where the provisioning data flows (answered 2026-10-26)
+
+**Short answer: the modem provisions itself.** The SM-DP+ TLS download
+rides the modem's own data bearer (the enabled profile — nadanada) while
+the eUICC session runs over the same modem's AT port. No bench, no WiFi,
+no second device needed.
+
+Measured on the live router (baseline 2026-10-26, `docs/evidence/wedge/`):
+
+| Path | Interface | Role in provisioning |
+|---|---|---|
+| **Modem data bearer** | `wwan0` (QMI raw-IP via `/dev/cdc-wdm0`, was `usb0` in ECM during the actual Gate-2 download) | **THE download path** — default route 0, carrier of the SM-DP+ HTTPS session, riding the currently-enabled profile |
+| Modem AT control plane | `/dev/ttyUSB0-3` (shuffles) | the `AT+CSIM` eUICC session itself — independent plane, same modem |
+| Ethernet management VLAN | `lan.200` = 10.200.0.2/24, default route metric 5 via bench host (`enx.200` = 10.200.0.1) | fallback internet only (needs bench NAT+UFW, see `docs/BENCH-UFW-UNBLOCK.md`, issue #45) — not used during the known-good download |
+| WiFi STA | `phy0-sta0` = 192.168.13.195, associated to the same AP as the bench's `wlp4s0` | management reachability only; **no default route** — carries no provisioning traffic. (The "no WiFi" vendor claim is stale under OpenWrt: a working mt76 radio exists.) |
+| Bench LAN | `br-lan` = 192.168.1.10 ← bench at 192.168.1.127 | SSH/provisioning **control** (we drive lpac from here), not data |
+
+Consequences for operations:
+- A download can run with the bench host offline — the router only needs
+  cellular coverage on the enabled profile.
+- During the download the modem simultaneously: carries IP traffic on the
+  enabled profile (nadanada) + serves the eUICC provisioning session over
+  CSIM. Profile swap afterwards (enable + reboot) is what changes the data
+  bearer's identity — the download itself never interrupts connectivity.
+- Do not add routes/iptables on the router during a download window; the
+  default route via `wwan0` is load-bearing.
+
 ## Architecture (current understanding)
 
 ```
@@ -212,6 +239,18 @@ This project went through a rapid discovery arc on 2026-10-25/26:
 4. **"What mode should the router run?"** → QMI raw-IP (usbnet=0) measured
    3.1× faster than ECM (9.4 vs 3 Mbps). The stock image ships QMI-native.
    MBIM is blocked (missing packages). Vendor QMAP is staged but untested.
+
+5. **Upstream arc (2026-10-26): lpac PR #466 + the research program.**
+   The uppercase-hex fix went upstream as `LPAC_APDU_AT_HEX` (option,
+   AT-drivers-only, per maintainer review) — full record:
+   `docs/UPSTREAM-LPAC-AT-HEX-CASE.md`. Root cause found in the spec:
+   TS 27.007 routes `+CSIM` payloads through the `+CSCS` "HEX" character
+   set, defined/exemplified uppercase-only. The lpac post-error segfault
+   was root-caused by a research session (uninitialized `_cleanup_` locals,
+   11 declarations / 8 applet files — `docs/evidence/lpac-segfault/`),
+   verified on pristine upstream; upstream report is DRAFTED and GATED.
+   Follow-up work is parked as issues on Amperstrand/lpac (#1–#4) and
+   this repo (#52, wedge forensics) — pick up there, not from chat logs.
 
 ## Rules of engagement for agents
 

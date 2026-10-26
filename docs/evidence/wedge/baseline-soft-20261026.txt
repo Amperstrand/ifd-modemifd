@@ -1,0 +1,39 @@
+=== date ===
+2026-10-26T19:21:51Z
+=== routes ===
+default via 10.180.87.157 dev wwan0  src 10.180.87.158 
+default via 10.200.0.1 dev lan.200  metric 5 
+10.180.87.156/30 dev wwan0 scope link  src 10.180.87.158 
+10.200.0.0/24 dev lan.200 scope link  metric 5 
+192.168.1.0/24 dev br-lan scope link  src 192.168.1.10 
+192.168.13.0/24 dev phy0-sta0 scope link  src 192.168.13.195 
+=== addrs ===
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN qlen 1000
+    inet 127.0.0.1/8 scope host lo
+5: lan.200@lan: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+    inet 10.200.0.2/24 brd 10.200.0.255 scope global lan.200
+6: br-lan: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+    inet 192.168.1.10/24 brd 192.168.1.255 scope global br-lan
+8: phy0-sta0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+    inet 192.168.13.195/24 brd 192.168.13.255 scope global phy0-sta0
+9: wwan0: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UNKNOWN qlen 1000
+    inet 10.180.87.158/30 brd 10.180.87.159 scope global wwan0
+=== usb tree ===
+2-1 2c7c:0800 RG502Q-EA
+usb1 1d6b:0002 xHCI Host Controller
+usb2 1d6b:0003 xHCI Host Controller
+=== ttys ===
+/dev/ttyUSB0
+/dev/ttyUSB1
+/dev/ttyUSB2
+/dev/ttyUSB3
+=== cdc-wdm ===
+/dev/cdc-wdm0
+=== modem ident ===
+FUNC_PORT=/dev/ttyUSB3
+RG502QEAACR13A03M4G_ZYXEL
+OK
++CEREG: 0,5
+OK
++CSQ: 20,99
+OK

@@ -1,0 +1,3 @@
+WARNING: AT driver is for demo purposes only.
+WARNING: AT driver strictly complies with "ETSI TS 127 007" specification.
+WARNING: Some operations (e.g: download, delete, etc.), may fail due to insufficient response time.
