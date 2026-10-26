@@ -1,0 +1,26 @@
+WARNING: AT driver is for demo purposes only.
+WARNING: AT driver strictly complies with "ETSI TS 127 007" specification.
+WARNING: Some operations (e.g: download, delete, etc.), may fail due to insufficient response time.
+AddressSanitizer:DEADLYSIGNAL
+=================================================================
+==2410591==ERROR: AddressSanitizer: SEGV on unknown address (pc 0x75a40c644688 bp 0x7ffce098c790 sp 0x7ffce098c750 T0)
+==2410591==The signal is caused by a READ memory access.
+==2410591==Hint: this fault was caused by a dereference of a high value address (see register values below).  Disassemble the provided pc to learn which register was used.
+    #0 0x75a40c644688 in bool __sanitizer::atomic_compare_exchange_strong<__sanitizer::atomic_uint8_t>(__sanitizer::atomic_uint8_t volatile*, __sanitizer::atomic_uint8_t::Type*, __sanitizer::atomic_uint8_t::Type, __sanitizer::memory_order) ../../../../src/libsanitizer/sanitizer_common/sanitizer_atomic_clang.h:81
+    #1 0x75a40c644688 in __asan::Allocator::AtomicallySetQuarantineFlagIfAllocated(__asan::AsanChunk*, void*, __sanitizer::BufferedStackTrace*) ../../../../src/libsanitizer/asan/asan_allocator.cpp:668
+    #2 0x75a40c644688 in __asan::Allocator::Deallocate(void*, unsigned long, unsigned long, __sanitizer::BufferedStackTrace*, __asan::AllocType) ../../../../src/libsanitizer/asan/asan_allocator.cpp:724
+    #3 0x75a40c6fc49b in free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:53
+    #4 0x75a40cd45a01 in es10c_ex_euiccinfo2_free /tmp/opencode/segfault-dig/lpac/euicc/es10c_ex.c:269
+    #5 0x57f911482f52 in applet_main /tmp/opencode/segfault-dig/lpac/src/applet/chip/info.c:19
+    #6 0x57f911481094 in applet_entry /tmp/opencode/segfault-dig/lpac/src/applet.c:34
+    #7 0x57f9114817e1 in applet_main /tmp/opencode/segfault-dig/lpac/src/applet/chip.c:24
+    #8 0x57f911481094 in applet_entry /tmp/opencode/segfault-dig/lpac/src/applet.c:34
+    #9 0x57f911486537 in lpac_main /tmp/opencode/segfault-dig/lpac/src/lpac.c:221
+    #10 0x57f911486537 in main /tmp/opencode/segfault-dig/lpac/src/main.c:3
+    #11 0x75a40c22a1c9 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:58
+    #12 0x75a40c22a28a in __libc_start_main_impl ../csu/libc-start.c:360
+    #13 0x57f911480e44 in _start (/tmp/opencode/segfault-dig/lpac/build-pattern/src/lpac+0x7e44) (BuildId: 47d05dcd2e82bb968360aa50b741dfe001cce1d8)
+
+AddressSanitizer can not provide additional info.
+SUMMARY: AddressSanitizer: SEGV ../../../../src/libsanitizer/sanitizer_common/sanitizer_atomic_clang.h:81 in bool __sanitizer::atomic_compare_exchange_strong<__sanitizer::atomic_uint8_t>(__sanitizer::atomic_uint8_t volatile*, __sanitizer::atomic_uint8_t::Type*, __sanitizer::atomic_uint8_t::Type, __sanitizer::memory_order)
+==2410591==ABORTING
