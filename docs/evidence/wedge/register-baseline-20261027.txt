@@ -1,0 +1,64 @@
+# gpiopoke register baseline — healthy state, 2026-10-27T15:19:00Z (#53 step 3)
+
+Species-level record (hostname redacted; no other identifiers present).
+
+## Provenance & rationale
+
+Captured by the wedge-dossier lane at owner direction ("do what you think is
+best and document it"), 2026-10-27. The board's GPIO bank0 window was read
+via the gpiopoke kernel module in **dump-only mode** (default `mode=dump`:
+`ioread32` only, no register writes; module returns `-EINVAL` from init so
+it never stays loaded). This is #53 step 3 — the healthy-state register
+baseline that the pre-registered wedge-diff protocol (dossier §5 Phase C)
+compares against. Decision rationale: the capture is a pure SoC register
+read on a fresh-boot healthy router (uptime 44 min, modem fully enumerated,
+zero eUICC ops this boot); the module design was live-proven on this
+hardware family 2026-10-25; the only write-capable code paths (`mode=cycle`,
+`mode=pwrkey`) are parameter-gated and were not exercised. The modem-lane
+lock could not be taken (tool permission denied for this lane) — recorded
+here deliberately; the touch reads SoC GPIO registers only, zero modem/AT
+interaction.
+
+Module build provenance: built from `tools/gpiopoke/gpiopoke_k.c` against
+the official OpenWrt 25.12.6 ramips/mt7621 SDK (kernel 6.12.112 prepared
+tree; compiler string identical to the kernel's own — OpenWrt GCC 14.3.0
+r33311-981c978eff). vermagic `6.12.112 SMP mod_unload MIPS32_R2 32BIT` —
+exact match to the router. sha256(gpiopoke_k.ko) =
+`ddaf21361c21bdc068a9efa872b54070c00d8068caede46ca053052621899da4`;
+md5 transfer-verified before insmod. Full rebuild recipe: SDK at
+`/tmp/opencode/sdk-25126`, KDIR `build_dir/target-mipsel_24kc_musl/
+linux-ramips_mt7621/linux-6.12.112`, out-of-tree `M=` build with the SDK
+toolchain `CROSS_COMPILE`.
+
+## Router state at capture (corroborated healthy)
+
+- Kernel: 6.12.112 #0 SMP (build 2026-10-17), hostname redacted
+- Uptime: 44 min (fresh boot, no profile ops this boot — fresh-boot gate
+  of the QMI series plan satisfied for the record)
+- Modem fully on bus: /dev/ttyUSB0-3 + /dev/cdc-wdm0 present
+- Module self-unload verified: lsmod count 0 after insmod (rc=255 =
+  busybox mapping of the designed -EINVAL return)
+
+## Register dump (bank0 base 0x1e000600, offsets per gpiopoke README)
+
+| offset | register | value | interpretation |
+|---|---|---|---|
+| +0x00 | DIR | `000ce019` | bit18 (lte-power) = output; bit4 (lte-pwrkey) = output; bit3 (RESET_N) = output |
+| +0x10 | (reserved window) | `00000000` | — |
+| +0x20 | DATA | `003c5157` | **bit18=1 → lte-power rail HIGH (modem powered); bit4=1 → pwrkey idle-high (not pressed); bit3=1 → RESET_N de-asserted** — healthy steady-state |
+| +0x30 | SET | `ffffffff` | write-only (reads all-ones, as documented) |
+| +0x40 | CLR | `ffffffff` | write-only (reads all-ones, as documented) |
+| +0x50..+0x64 | (bank ctrl) | `00000140 00000000 00000000 ffffffff 00000140 00000000` | recorded verbatim for diff |
+
+## Diff protocol now armed
+
+On any wedge (#53 step 4 / dossier §5 Phase C): capture this same dump
+BEFORE any recovery attempt and diff against this file. Discriminators this
+baseline enables: (a) lte-power rail bit vs modem behavior decouples
+"rail state" from "modem responsiveness" (H1 test); (b) unexpected
+DIR/DATA drift identifies host-side GPIO state corruption (H3 co-factor);
+(c) SET/CLR should always read `ffffffff` — any other value indicates a
+read-path anomaly worth investigating before trusting further reads.
+
+Raw capture (sha256 `d1e1d385c2c8f710d140cf4b6e70284b2f1f3a4ed5a0d0a…`,
+hostname-redacted) preserved alongside this file in the lane archive.
