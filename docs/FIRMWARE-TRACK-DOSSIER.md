@@ -50,6 +50,16 @@ failed ⇒ the differentiator is **which power domains drop**, not duration.
   transition, or card REFRESH) on a modem carrying **reset debt** from earlier
   operations in the same session. Fresh-boot modems absorb the identical card
   REFRESH (C2).
+- **C3 (added 2026-10-27, qmi-research lane):** a silent.link enable executed
+  via **lpac's native-QMI backend** (QMI UIM, not AT+CSIM) on a fresh-boot
+  modem at ~18:44Z 2026-10-26 returned rc=0 with **zero wedge** — the modem
+  stayed healthy on the same boot through a subsequent ladder reset (the
+  19:14Z re-enumeration) and the 19:21:51Z baseline (CEREG roaming).
+  Strengthens the reset-debt model (fresh boot absorbs) and adds a transport
+  dimension: QMI-UIM enables carry none of the AT/CSIM-path fragility
+  observed on this firmware. Evidence: qmi-research p5-ladder (conwrt
+  sessions/2026-10-26-nr7101-qmi-singlemode-window.md §G5b/c; profile switch
+  without PoE cycle — conwrt #577 E2).
 - The differentiator is **not** the reset method (three methods, two wedge
   signatures, one day). It is this firmware's **USIM re-initialization after
   ANY profile change**.
@@ -241,7 +251,11 @@ diff-on-next-wedge protocol is armed.
   additionally captured a **clean re-enumeration signature** — option/qmi
   disconnect burst followed 14 s later by full SuperSpeed re-attach — the
   healthy contrast shape for W1 (which shows the disconnect burst with **no**
-  re-attach, ever).
+  re-attach, ever). Attribution (2026-10-27, qmi-research): that burst was
+  the p5-ladder's reset taking effect after failed opmode attempts — a
+  software-initiated modem reset absorbed cleanly by the healthy QMI
+  composition; the snapshot's correction addendum carries the full
+  provenance.
 
 ---
 
