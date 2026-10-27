@@ -51,7 +51,7 @@ referenced procedures to go from a stock NR7101 to a working eSIM router.
 
 | Blocker | Issue | Impact |
 |---|---|---|
-| Modem firmware wedge class | #38 | Profile switches are probabilistic; firmware 13A04 likely fixes |
+| Modem firmware settle/wedge classes | #67 (supersedes #38's blocked state; #53 COMPLETE) | QMI-path switching = slow-but-self-healing (~50-min settle, no cut needed); AT-path = cut-requiring. Cut-free switching viable with a wait-out watchdog; see #67 next-diagnostics |
 | MBIM mode | #39 | ~~No kmod/umbim in feed~~ package-level block LIFTED on 25.12.6 (kmod-usb-net-cdc-mbim + libmbim 1.32 + mbim-utils verified in feed); still PARKED — composition switch is wedge-class, QMI measured 9.4 Mbps, at_csim provisioning proven; revisit on firmware 13A04 or QMI degradation |
 | Speedtest eSIM data | #41 | Carrier policy blocks sustained TCP; profile management only |
 | Bench UFW | #45 | Router has no internet via bench host unless owner opens UFW |
@@ -187,8 +187,10 @@ Consequences for operations:
 2. `docs/KNOWN-GOOD-ONDEVICE-PROVISIONING.md` — the validated procedure
 3. `docs/MODEM-REFRESH-POLICY.md` — the wedge matrix + refresh ladder (read before touching profiles)
 4. `docs/FIRMWARE-TRACK-DOSSIER.md` — the 13A04 upgrade research (blocked on owner GO)
-5. `docs/ARCHITECTURE-ROADMAP.md` — the broader decisions record
-6. `docs/SILENTLINK-ONESHOT-GATES.md` — the one-shot gate checklist
+5. `docs/QMI-SWITCH-SERIES-PLAN.md` — pre-registered switch-reliability protocol (+ Amendments; cycle-1 outcome in #67)
+6. `docs/WEDGE-RECOVERY-ANALYSIS.md` — reboots-vs-power-cut answer, PoE-automation, EDL discriminator
+7. `docs/ARCHITECTURE-ROADMAP.md` — the broader decisions record
+8. `docs/SILENTLINK-ONESHOT-GATES.md` — the one-shot gate checklist
 
 ## Tools in this repo
 
@@ -268,6 +270,25 @@ This project went through a rapid discovery arc on 2026-10-25/26:
    `action_required` until a maintainer approves workflow runs — local
    gates are the only pre-review gate we control. After pushing, watch
    `gh pr checks` and fix CI findings with commits, never with comments.
+
+9. **Wedge-forensics arc (2026-10-27, issue #53 COMPLETE; resume-cold = #67).**
+   The dossier landed (PR #56) + the gpiopoke register baseline was captured
+   via the official 25.12.6 SDK (#53 steps 1–3). The pre-registered QMI
+   switch series ran cycle 1 under Amendment A (carrier outage, mechanics-
+   only): a **code:0 native-QMI enable on a fresh boot went silent-but-on-bus
+   for ~53 min, then SELF-RECOVERED** — an extended-settle class, not a
+   deep wedge. Selective-service localization during the silence (NAS/WDS
+   alive with bearer up; UIM/DMS/AT dead) pins the hang to the USIM
+   subsystem. First register diffs captured (undeclared bit27 high during
+   hang, cleared after; bit21 low post-recovery; declared control bits
+   pristine). Verdicts: switching SPEED rejected (50-min settle needs a
+   wait-out watchdog ≥60 min in modem-guard's settle rung); cut-free
+   self-healing supported (n=1); fresh boot does not prevent the settle.
+   Card state at handoff: **nadanada active** (cycle-1 targeting bug — see
+   #67 finding 4), silent.link displaced-disabled, restoration owner-gated
+   (prefer post-carrier-return). All evidence: docs/evidence/wedge/, #67.
+   Bench power note: this unit sits on a dumb PoE injector — GS1900
+   stock_ctl path does NOT cover it (ops#41).
 
 ## Rules of engagement for agents
 
