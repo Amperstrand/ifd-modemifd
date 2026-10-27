@@ -308,3 +308,34 @@ on ES10 STORE DATA (at_csim path)".
   manpage (Debian).
 - Soprani.ca wiki "lpac via USB modem / PatchingForQuectel" (via search
   snapshot; hub page fetched 2026-10-25).
+
+---
+
+## Lane closure — final status (2026-10-27, crash-relaunch charter)
+
+This research lane's arc completed end-to-end between 2026-10-25 and
+10-27: `pipe/lpac-quectel` decoded (2024 raw-io/pacing workaround,
+historical corroboration), `fildunsky/lpac-build` decoded (curated
+AT-robustness stack + the libqmi collection mechanism + ready-made
+mipsel artifacts), and the two forks' combined evidence produced the
+**lowercase-hex smoking gun** — which became correction 4, the
+`route1-gate2` artifact (`b587d46f`), the 24 s T-A rehearsal download,
+the executed-and-verified silent.link provisioning (#43 closed), and
+upstream filings lpac #428-comment / PR #466 / PR #467 (+ the #419
+driver-layer teardown root-cause by successor lanes, draft owner-gated).
+Verification records archived: `docs/evidence/gate2-verification/`.
+
+**Final external states at closure (2026-10-27):** lpac PRs #466, #467,
+#452 all **open awaiting maintainer action** (approvals in hand on
+#466/#467; #467 format pass landed; post-merge steps parked at
+Amperstrand/lpac#4); lpac issue #419 comment **owner-gated** (recalibrated
+draft at `docs/upstream-reports/issue-419-crossref-comment.md`, tracker
+Amperstrand/lpac#6); lpac upstream tag still `v2.3.0`, zero merged drift
+affecting our pin; `fildunsky/lpac-build` unchanged at `v2.3.0-r4`
+(2026-09-21). **No actionable drift since the research; watch items live
+on the Amperstrand/lpac trackers, not in this doc.**
+
+Open-question disposition (§6 follow-ups): R1 wire-capture review — done
+(Gate-1 live); uppercase mipsel build — done (`route1-gate2`/`b587d46f`);
+fildunsky apk install-check — moot (R3a composition switch never
+happened; AT path won).

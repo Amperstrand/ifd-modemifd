@@ -1,0 +1,19 @@
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+WARNING: AT driver is for demo purposes only.
+WARNING: AT driver strictly complies with "ETSI TS 127 007" specification.
+WARNING: Some operations (e.g: download, delete, etc.), may fail due to insufficient response time.
+WARNING: Please use 'LPAC_APDU_AT_DEVICE' instead of 'AT_DEVICE'
+{"type":"lpa","payload":{"code":-1,"message":"es10c_get_eid","data":""}}
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00007ffff7cade55 in __GI___libc_free (mem=0x3) at ./malloc/malloc.c:3375
+warning: 3375	./malloc/malloc.c: No such file or directory
+#0  0x00007ffff7cade55 in __GI___libc_free (mem=0x3) at ./malloc/malloc.c:3375
+#1  0x00007ffff7f90acf in es10c_ex_euiccinfo2_free () from /tmp/opencode/segfix/lpac-upper/build/euicc/libeuicc.so.2
+#2  0x0000555555559520 in applet_main.lto_priv ()
+#3  0x00005555555583c4 in applet_entry ()
+#4  0x0000555555558200 in applet_main.lto_priv ()
+#5  0x00005555555583c4 in applet_entry ()
+#6  0x00005555555581b0 in lpac_main ()
+#7  0x0000555555557d0d in main ()
