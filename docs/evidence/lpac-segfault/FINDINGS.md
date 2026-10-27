@@ -261,3 +261,16 @@ fix folds into/behind the gated #419 cross-ref draft, never a separate
 filing. Tracker capture: Amperstrand/lpac issue (this family) + the at_csim
 leak fix (esim-research's) were the two untracked follow-ups at session
 close; ops#29 is the ops-level umbrella.
+
+## 10. Channel-leak A/B (2026-10-27) — c004218 validated; leaks need BOTH fixes
+
+Tracker: Amperstrand/lpac **#6** (= the #419 family above, owner-pasted from
+the staged body) and **#5** (at_csim leak; esim-research took it upstream as
+**estkme-group/lpac PR #468**, OPEN). Mock A/B (this lane):
+`docs/evidence/lpac-channel-leak-ab/RESULTS.md` — stock leaks channels on
+clean failed inits and poisons the pool for later sessions (`6A81` on the
+next open — the bench fingerprint reproduced); c004218 closes inline, pool
+stays healthy. Key insight: a crash-before-teardown still leaks on ANY build
+(the #467 applet bug bypasses disconnect) — **#467 and #468 are
+complementary; together they close both leak classes.** Env gotcha for
+injection testing: `LPAC_CUSTOM_ISD_R_AID`.

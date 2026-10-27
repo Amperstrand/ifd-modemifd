@@ -1,0 +1,5 @@
+WARNING: AT driver is for demo purposes only.
+WARNING: AT driver strictly complies with "ETSI TS 127 007" specification.
+WARNING: Some operations (e.g: download, delete, etc.), may fail due to insufficient response time.
+WARNING: Please use 'LPAC_APDU_AT_DEVICE' instead of 'AT_DEVICE'
+{"type":"lpa","payload":{"code":-1,"message":"es10c_get_eid","data":""}}
