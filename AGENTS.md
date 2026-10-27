@@ -251,6 +251,12 @@ This project went through a rapid discovery arc on 2026-10-25/26:
    verified on pristine upstream; upstream report is DRAFTED and GATED.
    Follow-up work is parked as issues on Amperstrand/lpac (#1–#4) and
    this repo (#52, wedge forensics) — pick up there, not from chat logs.
+   Continuation (2026-10-27): #467 approved+formatted (3521f66); the
+   driver-layer sibling (#419 family: unzeroed malloc'd lastChannelId in
+   qmi_qrtr/mbim) fixed, A/B-proven deterministically, and submitted as
+   draft PR #469 + cross-ref on #419 — terminal record Amperstrand/lpac#6,
+   evidence docs/evidence/lpac-419-ab/. Contribution preflight is now
+   mandatory (rule 8, tools/preflight/).
 
 8. **Contribution preflight before any external PR prep.** Read the
    target repo's CI FIRST (`tools/preflight/contrib-preflight.sh

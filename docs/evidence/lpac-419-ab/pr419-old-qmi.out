@@ -1,0 +1,2 @@
+error: create QMI device from path failed: Couldn't query file info: Error when getting information for file “/dev/cdc-wdm0”: No such file or directory
+{"type":"lpa","payload":{"code":-1,"message":"euicc_init","data":""}}
