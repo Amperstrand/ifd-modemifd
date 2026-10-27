@@ -34,10 +34,16 @@ conwrt #577 E2).
    full JSON.
 5. Settle 90 s. **No CFUN. No host reset.**
 6. Router reboot (natural landing). Wait for full bring-up (~3 min).
-7. Post-boot verify: QCCID = target, CEREG registered, **data-path check per
-   conwrt #575 isolation protocol** (assert `ip route get` answers dev
-   wwan0; public IP differs from house exit; never drop the AI host's
-   uplink).
+7. Post-boot verify: **profile correctness + gate.** (a) QCCID = target
+   ICCID and CEREG registered (the gate does NOT check which profile is
+   active — this stays manual). (b) **Call `/root/reliability/verify-
+   gate.sh`** (device-reliability lane; standalone POSIX sh, READ-ONLY,
+   kill-guarded, takes no lock — safe mid-series; SSOT: conwrt-bench
+   `tools/reliability/verify-gate.sh`). Cycle passes iff exit 0 (GATE:GREEN)
+   AND tokens `data=PASS modem=PASS` in `/root/reliability/state/last-checks`
+   (grep-able #575 assertions). `wg=WARN` acceptable — the CGNAT per-session
+   UDP-filtering class is known and out of scope here. Manual `ip route get`
+   check retained as fallback if the gate is absent.
 8. Archive: cycle log (JSON line), lpac outputs, QCCID/CEREG captures,
    sha256 — to `docs/evidence/qmi-switch-series/` (staged).
 9. Reset-debt ledger updated (ops this boot = 0 is the invariant; the reboot
@@ -71,10 +77,19 @@ not certainty.
 ## Dependencies & sequencing
 
 1. **gpiopoke register baseline MUST be captured first** (#53 step 3) — a
-   series-wedge without the baseline wastes the specimen. Blocks on
-   toolchain + rebuild (in progress).
-2. Bench session window (~2–3 h: 5 cycles × ~20 min + margins).
-3. Operator GO per cycle-zero (first cycle doubles as dress rehearsal).
+   series-wedge without the baseline wastes the specimen. **CAPTURED
+   2026-10-27T15:19Z** (`docs/evidence/wedge/register-baseline-20261027.txt`)
+   — this prerequisite is satisfied.
+2. **Start gate (agreed with device-reliability, 2026-10-27):** series
+   starts ONLY after (a) lpac-hwval's device-release ping, then (b)
+   device-reliability's cycle-3 (final) reboot + gate-green evidence
+   (~15 min post-boot). That boot doubles as this series' fresh-boot
+   precondition for its first enable (tail-only boot pairing; their cycles
+   1–2 stay standalone). Router state during the window: their ladder is
+   guarded/disabled until release; the verify-gate itself is always safe
+   (read-only, no lock).
+3. Bench session window (~2–3 h: 5 cycles × ~20 min + margins).
+4. Operator GO per first cycle (first cycle doubles as dress rehearsal).
 
 ## Explicitly out of scope
 
