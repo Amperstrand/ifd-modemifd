@@ -35,9 +35,15 @@ That STOP is honest — on unmodified hardware nothing software-side lies
 above it.
 
 **Recommended extension (the workaround):** automate the *power* layer, not
-the reboot layer. The NR7101 is PoE-powered (802.3at) — a managed PoE switch
-or injector-on-smart-plug with per-port control turns the 20 s cut into a
-remote, scriptable operation:
+the reboot layer. **Update 2026-10-27: this automation already exists on the
+bench** — the NR7101's PoE feed sits behind a managed Zyxel GS1900 with
+per-port control (`stock_ctl cycle 7`, port p7 per the registry — the
+documented RUNBOOK path), and a labgrid place `nr7101-router` exposes the
+same power control labgrid-natively (source: wedge-cont lane handoff,
+2026-10-27). Known caveat: the switch has been intermittently unreachable
+from the bench host — verify the control path BEFORE depending on it
+mid-series (probe it as a pre-flight, not during an incident). Remaining
+work is therefore only the hook wiring:
 
     exhaustion rung → POE_CMD (port off 20 s → on) → boot health check → probe
 
