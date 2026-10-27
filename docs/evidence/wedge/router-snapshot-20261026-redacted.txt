@@ -1,5 +1,25 @@
 # Router snapshot — wedge-dossier lane, 2026-10-26 (read-only, redacted)
 
+> **CORRECTION ADDENDUM (2026-10-27, from qmi-research lane evidence —
+> supersedes the two inferences below):** (1) The composition was **QMI from
+> boot** — qmi-research p2-verify at 18:12:36Z (kernel 17.4s) already showed
+> `+QCFG: "usbnet",0` + qmi_wwan bound. The MBIM→QMI transition was **staged
+> on the OLD boot and took effect across the PoE boundary** (qmi570-poewatch
+> unit: DEVICE DOWN 18:10:26Z → new boot 18:11Z). There was NO in-session
+> composition switch on this boot. (2) The profile switch is **attributed**:
+> qmi-research's p5-ladder ran `lpac profile enable <silent.link-ICCID>` via
+> the **native-QMI backend at ~18:44Z, rc=0** (silent.link enabled, Speedtest
+> auto-disabled) — **same boot, no PoE cycle** (kernel-time continuity
+> through the 19:14Z re-enumeration and the 19:21:51Z baseline corroborates;
+> conwrt #577 E2). (3) The 19:14Z re-enumeration burst = the p5-ladder's
+> reset taking effect after failed opmode attempts. Evidence:
+> /root/qmi570/p5-ladder.sh, /tmp/opencode/qmi-window/p5-ladder-evidence.log,
+> sessions/2026-10-26-nr7101-qmi-singlemode-window.md (conwrt-bench) §G5b/c.
+> The session-state file's "MBIM wedged" text described the OLD boot (stale
+> when written). The "<19:14Z inferred composition switch" row below is
+> WRONG as to mechanism; Dev#=3 reflects boot enumeration + one prior
+> re-enumeration, not a composition change.
+
 **Provenance:** the ONLY device interaction by the wedge-dossier lane this
 session, run after the main lane's soft baseline (19:21:51Z):
 
