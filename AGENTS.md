@@ -197,7 +197,7 @@ Consequences for operations:
 | `tools/modem/atlib.sh` | master | Port-safe AT I/O (functional-port detection, reader-backed exchanges) |
 | `tools/modem/refresh.sh` | master | Executable refresh ladder with budget enforcement |
 | `tools/gpiopoke/` | master | Register-level modem power/reset control (recovery instrument) |
-| `tools/modem/modem-guard/` | branch tools/modem-guard | Shutdown hook + boot health + watchdog (half-built) |
+| `tools/modem/modem-guard/` | master (PR #50, 52b01c0) | Shutdown hook (lte-reset GPIO at shutdown) + boot health check + procd watchdog (CPIN probe, refresh-ladder escalation, budget+backoff, DEFAULT-STOP) — **landed 2026-10-26** |
 | `tests/hardware/at_csim_c0_battery.sh` | master | Corrected GET RESPONSE probe (the instrument that caught the 2C/C0 bug) |
 | `tests/hardware/onrouter-readonly-session.sh` | master | Read-only session-in-a-box (rehearsed, reviewer-amended) |
 
