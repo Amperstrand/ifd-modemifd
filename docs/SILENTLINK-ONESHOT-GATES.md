@@ -1,5 +1,14 @@
 # silent.link One-Shot — Final Gate List (post-T-A reality)
 
+> **RECORD CLOSED 2026-10-27 (audit): the one-shot EXECUTED successfully in
+> the 2026-10-25/26 windows** — silent.link profile downloaded onto the 9eSIM,
+> present on-card by the 2026-10-26 QMI singlemode window (enable/disable
+> exercised over QMI, G5b/c PASS), data check on APN `internet` run (session
+> record `2026-10-26-nr7101-qmi-singlemode-window.md`), procedure validated
+> as the AGENTS.md quick start; #43 closed. G2 was resolved by owner policy
+> (2026-10-27): reissue questions moot — rehearsal-first is standing law.
+> This document is now the historical gate record.
+
 **Supersedes the D2–D6 gate structure** in the review record's §D,
 which was written for the abandoned MBIM-composition path. Every
 composition-era gate is moot: the provisioning transport is **plain

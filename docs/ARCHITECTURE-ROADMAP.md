@@ -12,6 +12,9 @@ silent.link write-window recommendation) supersedes the ordering in
 > (research lane w19:pK; reviewer-consistent; owner verdict pending).**
 >
 > Context: the silent.link credential is in hand and unconsumed; the
+> ~~unconsumed~~ — **[audit 2026-10-27: executed successfully 2026-10-25/26;
+> see SILENTLINK-ONESHOT-GATES closure stamp + #43 close. The paragraph
+> below is the historical framing of the addendum, kept as record.]** The
 > physical-reader window was struck by the owner constraint (card stays
 > seated, no external reader); the on-router read-only ladder
 > (`docs/ONROUTER-READONLY-OPTIONS.md`, PR #33) now governs sequencing, and

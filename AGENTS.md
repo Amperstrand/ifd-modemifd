@@ -159,9 +159,9 @@ Consequences for operations:
                     ┌─────────────────┐
                     │   9eSIM card    │ (ECP3 eUICC, slot 2)
                     │  nadanada: ON   │
-                    │  silentlink: ○  │
-                    │  speedtest: ○   │
-                    └────────┬────────┘
+                    │  silentlink: ○  │ (downloaded+verified 10-25/26;
+                    │  speedtest: ○   │  ○=present+disabled — per-profile
+                    └────────┬────────┘   enable state varies by window)
                              │ SIM interface
                     ┌────────┴────────┐
                     │  RG502Q-EA modem│ (AACR13A03 firmware)
@@ -210,7 +210,7 @@ Consequences for operations:
 | #40 | Vendor QMAP mode untested | nice-to-have (may unlock more throughput) |
 | #41 | Speedtest eSIM data blackhole | no (use nadanada for data) |
 | #42 | SIM illegal state after switch | ✅ needs automation in modem-guard |
-| #43 | **silent.link one-shot** | ✅ **THE milestone operation** |
+| #43 | ~~silent.link one-shot~~ **DONE** (executed+verified 2026-10-25/26, issue closed 2026-10-27) | ✅ executed |
 | #44 | Modem-guard tooling | ✅ stability infrastructure |
 | #45 | Bench UFW blocks router internet | workaround exists (offline install) |
 | #46 | ECP3 enable variants | refinement |
@@ -274,8 +274,13 @@ This project went through a rapid discovery arc on 2026-10-25/26:
    or the CPIN-based detection pattern.
 4. **The 9eSIM card is not sacrificial.** It holds the owner's operational
    profile (nadanada). No destructive operations without owner GO.
-5. **The one-shot credential (silent.link) is unconsumed.** It gets exactly
-   one attempt. Every step must be rehearsed first (they have been).
+5. **Real-eSIM provisioning policy (owner, 2026-10-27; supersedes the
+   one-shot-credential rule).** The silent.link one-shot is DONE — executed
+   and verified in the 2026-10-25/26 windows (#43 closed; quick start below
+   is the validated record). Going forward: rehearse and test on test/other
+   SIM cards; provision real (paid) eSIMs only when **every** checklist item
+   is checked. Reissue policy questions are moot — the rehearsal-first
+   posture is the standing rule.
 6. **Species-level records in public docs.** No ICCIDs, EIDs, matching-ids,
    or unit identifiers in the repository.
 7. **External-project activity is human-gated EVERY round.** Any comment,
