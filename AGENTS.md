@@ -52,7 +52,7 @@ referenced procedures to go from a stock NR7101 to a working eSIM router.
 | Blocker | Issue | Impact |
 |---|---|---|
 | Modem firmware wedge class | #38 | Profile switches are probabilistic; firmware 13A04 likely fixes |
-| MBIM mode | #39 | No kmod/umbim in feed; QMI is available and faster |
+| MBIM mode | #39 | ~~No kmod/umbim in feed~~ package-level block LIFTED on 25.12.6 (kmod-usb-net-cdc-mbim + libmbim 1.32 + mbim-utils verified in feed); still PARKED — composition switch is wedge-class, QMI measured 9.4 Mbps, at_csim provisioning proven; revisit on firmware 13A04 or QMI degradation |
 | Speedtest eSIM data | #41 | Carrier policy blocks sustained TCP; profile management only |
 | Bench UFW | #45 | Router has no internet via bench host unless owner opens UFW |
 
