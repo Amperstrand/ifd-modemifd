@@ -39,6 +39,39 @@ signature confirmed and stable through 18:20Z (~7 min silence; harvest at
 - Both independent instruments silent: AT functional port AND gate uqmi
   (`modem=FAIL`).
 
+### Selective-wedge refinement (device-reliability gate.log, 2026-10-27)
+
+Their kill-guarded uqmi ticks DURING the silent window (18:15/18:17/18:20Z)
+returned partial answers — the wedge is **subsystem-selective**:
+
+| Modem service | State in wedge window | Evidence |
+|---|---|---|
+| NAS (registration) | **ALIVE** — `reg=searching mode=online` | gate.log ×3 ticks |
+| WDS (bearer) | **ALIVE** — `wan=1`, bearer IP assigned | gate.log ×3 ticks |
+| DMS (device mgmt) | dead (gate modem-check FAIL) | gate.log |
+| UIM (SIM access / lpac) | dead | lpac silence post-enable |
+| AT parser (all 4 ports) | dead | at_func_port empty ×3 probes |
+
+The baseband control plane lived and even held a WAN bearer while the
+UIM/DMS/AT stack was hung — **localizing the hang to the USIM-handling
+subsystem** (dossier §6 H4 strengthened; whole-AP-dead models weakened).
+`reg=searching` shows NAS actively scanning mid-window (USIM re-init churn
+or carrier outage — the outage confounds the registration reading, not the
+liveness reading).
+
+**Wedge-depth scale (added to the harvest protocol):** on any future
+silent-but-on-bus event, probe NAS and WDS alongside AT/UIM before
+recovery — CTL-alive/UIM-dead = this class; nothing-alive = deeper. Cheap,
+one uqmi call each, already in the gate's repertoire.
+
+**Honest caveat + recovery-as-measurement:** persistence was 7 min at
+DEFAULT-STOP; "would it have self-recovered at minute 12?" is unverified.
+The owner's recovery is a free experiment: **reprobe immediately before
+the cut and record the cut time** — pre-cut silence at 15+ min upgrades
+this to a confirmed-deep wedge; any self-recovery reclassifies it as an
+extended-settle variant (which would itself amend the ladder's rung-1
+duration).
+
 ## Consequences (pre-registered verdicts, applied)
 
 1. **H_switch REJECTED.** Profile switching via the native-QMI backend is
