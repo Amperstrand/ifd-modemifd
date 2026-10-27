@@ -1,0 +1,65 @@
+# CYCLE-1 WEDGE — analysis addendum (2026-10-27, wedge-dossier lane)
+
+Species-level: harvest file masked (host, MACs); no ICCID/EID present.
+
+## Event
+
+QMI switch-reliability series, cycle 1 (Amendment A conditions: carrier
+outage, mechanics-only criteria). Fresh boot 18:09Z (device-reliability
+dry-run boot, zero eUICC ops this boot, gate `modem=PASS` pre-flight at
+18:11Z). **18:12:19Z**: `lpac profile enable` (test/travel profile) via
+native-QMI backend (`LPAC_APDU=qmi`, cdc-wdm0, UIM slot 2) → **rc=0,
+`code:0` success**. By 18:14Z the modem was **silent-but-on-bus**; wedge
+signature confirmed and stable through 18:20Z (~7 min silence; harvest at
+18:18Z). DEFAULT-STOP per protocol; no recovery attempted by the lane.
+
+## First register diff on a live wedge (vs baseline 2026-10-27T15:19Z)
+
+| register | baseline (healthy) | wedge (cycle 1) | diff |
+|---|---|---|---|
+| DIR +0x00 | `000ce019` | `000ce019` | none |
+| DATA +0x20 | `003c5157` | `083c5157` | **bit27: 0→1** (stable across 3 reads, 518/588/594s) |
+| SET/CLR | `ffffffff` | `ffffffff` | none |
+| bank ctrl | `00000140…` | `00000140…` | none |
+
+- All documented control lines UNCHANGED and healthy: bit18 lte-power=1
+  (rail on), bit4 pwrkey=1 (idle), bit3 RESET_N=1 (de-asserted). **The
+  host-side power/reset view of the modem is pristine while the modem is
+  unresponsive** — this class is NOT a power-rail/state latch.
+- **bit27 is undeclared in the DTS** (documented lines: LEDs 13/14/15,
+  keys 6/8, hogs 4+18; nothing at 27). An unidentified input whose level
+  flip correlates with the wedge. Semantics unknown; n=1; a datum for the
+  next specimen, not a conclusion.
+
+## Class determination
+
+- USB tree fully enumerated (all 5 interfaces bound, Dev#=2, SuperSpeed,
+  zero detach events) ⇒ **silent-but-on-bus (W2/W3 class)**.
+- EDL check negative (2c7c:0800, not 05c6:9008) — not a bootloader fall.
+- Both independent instruments silent: AT functional port AND gate uqmi
+  (`modem=FAIL`).
+
+## Consequences (pre-registered verdicts, applied)
+
+1. **H_switch REJECTED.** Profile switching via the native-QMI backend is
+   NOT reliably wedge-free on AACR13A03: fresh boot, zero prior ops,
+   single enable → wedge. The 2026-10-26 18:44Z clean enable (dossier C3)
+   was probabilistic luck, not fresh-boot protection.
+2. **Reset-debt model amended:** fresh boot does not immunize the QMI
+   path. Debt-free ≠ safe; the defect fires on the switch op itself
+   across every transport tested (AT+CSIM ×3, QMI ×1).
+3. **Firmware track (#38) returns to critical** — now with a captured
+   specimen class: internal modem-software hang, host power state clean,
+   USB function alive, command surfaces dead (H2/H4 in dossier §6;
+   H1's power-domain latch remains the W1-class explanation only).
+4. Card state at recovery: the enable completed card-side (`code:0`) —
+   test/travel profile is ENABLED on the eUICC; silent.link displaced.
+   Restoration (re-enable silent.link) after recovery, owner-directed.
+
+## Recovery (owner decision; DEFAULT-STOP binds the lane)
+
+20 s power cut — remotely available via the bench's PoE control
+(`stock_ctl cycle 7` / labgrid path, per WEDGE-RECOVERY-ANALYSIS.md; verify
+switch reachability first). Router host is healthy (WiFi-STA default route
+up); only the modem is wedged. Ladder stays GUARDED (agreed with
+device-reliability); nothing will auto-escalate.
