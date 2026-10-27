@@ -62,6 +62,21 @@ silent-but-on-bus): **DEFAULT-STOP** —
 
 ## Pass/fail (pre-registered)
 
+> **Amendment A (2026-10-27 ~17:50Z, carrier-outage ride):** lpac-hwval
+> released 17:42Z; device-reliability's N=3 is carrier-blocked (outage
+> ~2.5 h) and their ~18:00Z mechanics-validation reboot is accepted as the
+> fresh-boot precondition. During the outage, cycles pass on
+> **mechanics-only**: enable rc=0 + QCCID=target + gate token `modem=PASS`
+> + no wedge signature + clean re-enumeration; CEREG recorded but not
+> gating (outage-attributed non-registration documented per cycle). Data
+> validation is **deferred**: the final cycle — or an immediate
+> post-outage check — must land `data=PASS`; otherwise the series verdict
+> downgrades to **"mechanics-only, data-unvalidated"**. DEFAULT-STOP,
+> harvest, and recovery protocol unchanged (wedge recovery is power-level,
+> carrier-independent). Rationale: H_switch concerns the wedge class
+> (modem/USB/USIM), orthogonal to carrier data-plane availability; the
+> original data checks served end-state validation, not the hypothesis.
+
 | Outcome | Verdict | Consequence |
 |---|---|---|
 | 5/5 clean (enable rc=0, correct QCCID, registered, data OK) | **H_switch supported** | QMI-backend enable + natural reboot = canonical switching mechanism; 13A04 → optional (defense-in-depth); dossier §2 verdict cell updated |
