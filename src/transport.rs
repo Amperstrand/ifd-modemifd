@@ -47,7 +47,10 @@ impl ModemLink for TcpStream {
 
 /// Open a link by target string (see module docs for the syntax).
 pub fn open(target: &str) -> Option<Box<dyn ModemLink>> {
-    if let Some(rest) = target.strip_prefix("ssh://") {
+    let target = target.strip_prefix("tcp://").unwrap_or(target);
+    if let Some(rest) = target.strip_prefix("tty:") {
+        open_serial(rest)
+    } else if let Some(rest) = target.strip_prefix("ssh://") {
         match open_ssh(rest) {
             Ok(l) => Some(Box::new(l)),
             Err(e) => {
@@ -57,6 +60,69 @@ pub fn open(target: &str) -> Option<Box<dyn ModemLink>> {
         }
     } else {
         open_tcp(target)
+    }
+}
+
+/// Local tty link: termios setup via an `stty` subprocess (the crate
+/// targets routers whose shells own that job; identical settings to the
+/// ssh relay) and plain File I/O — read deadlines are served by the
+/// AT engine's nonblocking path.
+pub struct SerialLink {
+    file: std::fs::File,
+}
+
+impl Read for SerialLink {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.file.read(buf)
+    }
+}
+
+impl Write for SerialLink {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.file.write(buf)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
+    }
+}
+
+impl ModemLink for SerialLink {
+    fn set_read_timeout(&mut self, _d: Option<Duration>) -> io::Result<()> {
+        Ok(())
+    }
+    fn set_nonblocking(&mut self, nb: bool) -> io::Result<()> {
+        use std::os::unix::io::AsRawFd;
+        let fd = self.file.as_raw_fd();
+        // SAFETY: fcntl F_GETFL/F_SETFL on our own fd; flags kept as-is
+        // apart from O_NONBLOCK.
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let new = if nb {
+            flags | libc::O_NONBLOCK
+        } else {
+            flags & !libc::O_NONBLOCK
+        };
+        if unsafe { libc::fcntl(fd, libc::F_SETFL, new) } < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+}
+
+fn open_serial(tty: &str) -> Option<Box<dyn ModemLink>> {
+    let _ = Command::new("stty")
+        .args(["-F", tty, "115200", "raw", "-echo", "min", "1", "time", "0"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    match std::fs::OpenOptions::new().read(true).write(true).open(tty) {
+        Ok(file) => Some(Box::new(SerialLink { file })),
+        Err(e) => {
+            crate::log(&format!("serial transport to {} failed: {}", tty, e));
+            None
+        }
     }
 }
 
