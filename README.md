@@ -26,9 +26,17 @@ Evidence base:
 
 ## Architecture
 
-    PC/SC app → pcscd → libifd_modemifd.so (this crate)
-      → TCP → socat bridge on the OpenWrt router → modem AT port
+Primary path (vpcd — the vsmartcard virtual-reader standard; spec:
+`tests/hardware/VPCD-ARCHITECTURE.md`):
+
+    PC/SC app → pcscd → libifdvpcd (vsmartcard virtual reader)
+      ← vpcd TCP ← modem-vpicc agent (`agent/`, router-side)
       → AT+CSIM (basic + logical channels) → seated SIM
+
+Legacy/alternative: the built-in IFD handler of this crate
+(`libifd_modemifd.so`) drives the modem AT port directly over TCP
+(socat bridge) or `ssh://` (v3.5+; see the 2026-10-24 defect ledger in
+`agent/README.md` before relying on it for one-shot nights).
 
 Rust `cdylib`, std-only, no external crates. The IFDHandler 3.0 C ABI is
 implemented in `src/lib.rs` (constants mirrored from ifdhandler.h in

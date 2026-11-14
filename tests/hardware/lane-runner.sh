@@ -29,6 +29,13 @@
 #         HW_CONFIRM=YES_I_OWN_THE_HARDWARE — required when MODEMIFD_ADDR is
 #                          not loopback (NR7101 is owned by another lane
 #                          until the coordinator hands it over)
+#   vpcd mode (MODEMIFD_VPCD=1) — the lane reader is libifdvpcd (vsmartcard
+#       virtual reader; VPCD_SO) instead of the modemifd driver, and the
+#       runner spawns modem-vpicc (host build by default; override VPCD_AGENT
+#       with e.g. a qemu wrapper to rehearse the mipsel artifact) connecting
+#       out to the lane's vpcd port (VPCD_PORT). MODEMIFD_ADDR names the
+#       AGENT's --target (tcp://… mock/bridge, tty:/dev/… router-side). See
+#       tests/hardware/VPCD-ARCHITECTURE.md.
 #   --plan — print the resolved hardware-mode commands; run nothing.
 #
 # Env: LANE(modem-hil) FRIENDLYNAME(NR7101_SIM_dut) MODEMIFD_ADDR
@@ -57,6 +64,10 @@ SA_BIN="${SA_BIN:-systemd-socket-activate}"
 LANES_RUN_BASE="${LANES_RUN_BASE:-/run/pcscd-lanes}"
 LANES_CONF_BASE="${LANES_CONF_BASE:-/etc/reader.conf.d-lanes}"
 SO_FILE="${SO_FILE:-$REPO_ROOT/target/release/libifd_modemifd.so}"
+MODEMIFD_VPCD="${MODEMIFD_VPCD:-0}"
+VPCD_SO="${VPCD_SO:-/home/ubuntu/src/worktrees/ccid-firmware-rs/ccid-quality/tests/hardware/host/libifdvpcd-amperstrand.so}"
+VPCD_PORT="${VPCD_PORT:-35965}"
+VPCD_AGENT="${VPCD_AGENT:-}"
 
 DRYRUN=1
 PLAN=0
@@ -87,6 +98,10 @@ teardown() {
         kill "$BEAT_PID" 2>/dev/null || true
         BEAT_PID=""
     fi
+    if [ -n "${AGENT_PID:-}" ]; then
+        kill "$AGENT_PID" 2>/dev/null || true
+        AGENT_PID=""
+    fi
     if [ -n "${LANE_SSH:-}" ] && [ "${MODEM_LANE_SKIP:-0}" != "1" ]; then
         timeout 15 ssh -o BatchMode=yes "$LANE_SSH" "modem-lane release $LANE_OWNER" 2>/dev/null || true
     fi
@@ -115,7 +130,7 @@ hw_preflight() {
         exit 3
     fi
     case "$MODEMIFD_ADDR" in
-        127.0.0.1:*|localhost:*) ;;
+        127.0.0.1:*|localhost:*|tcp://127.0.0.1:*|tcp://localhost:*) ;;
         *)
             if [ "$HW_CONFIRM" != "YES_I_OWN_THE_HARDWARE" ]; then
                 echo "lane-runner.sh: MODEMIFD_ADDR=$MODEMIFD_ADDR is not loopback and" >&2
@@ -143,7 +158,19 @@ hw_preflight() {
             exit 3
         fi
     done
-    if [ ! -f "$SO_FILE" ]; then
+    if [ "$MODEMIFD_VPCD" = 1 ]; then
+        if [ ! -f "$VPCD_SO" ]; then
+            echo "lane-runner.sh: VPCD_SO not found: $VPCD_SO (build it in ccid-firmware-rs or set VPCD_SO)" >&2
+            exit 3
+        fi
+        if [ -z "$VPCD_AGENT" ]; then
+            VPCD_AGENT="$REPO_ROOT/target/release/modem-vpicc"
+            if [ ! -f "$VPCD_AGENT" ]; then
+                say "building $VPCD_AGENT"
+                (CDPATH='' cd -- "$HERE/../.." && cargo build --release -p modem-vpicc) || exit 3
+            fi
+        fi
+    elif [ ! -f "$SO_FILE" ]; then
         say "building $SO_FILE"
         (CDPATH='' cd -- "$HERE/../.." && cargo build --release) || exit 3
     fi
@@ -222,8 +249,14 @@ if [ "${MODEM_LANE_SKIP:-0}" != "1" ]; then
     BEAT_PID=$!
 fi
 
-printf 'FRIENDLYNAME %s\nDEVICENAME %s\nLIBPATH %s\nCHANNELID 1\n' \
-    "$FRIENDLYNAME" "$MODEMIFD_ADDR" "$SO_FILE" > "$LANE_CONF_DIR/modemifd.conf" || exit 3
+VPCD_HEX=$(printf '0x%04X' "$VPCD_PORT")
+if [ "$MODEMIFD_VPCD" = 1 ]; then
+    printf 'FRIENDLYNAME %s\nDEVICENAME /dev/null:%s\nLIBPATH %s\nCHANNELID %s\n' \
+        "$FRIENDLYNAME" "$VPCD_HEX" "$VPCD_SO" "$VPCD_HEX" > "$LANE_CONF_DIR/modemifd.conf" || exit 3
+else
+    printf 'FRIENDLYNAME %s\nDEVICENAME %s\nLIBPATH %s\nCHANNELID 1\n' \
+        "$FRIENDLYNAME" "$MODEMIFD_ADDR" "$SO_FILE" > "$LANE_CONF_DIR/modemifd.conf" || exit 3
+fi
 
 # pcsc-lite >= 2.0 refuses to start when the SYSTEM /run/pcscd/pcscd.comm
 # exists with a live pid (second-instance check runs before socket
@@ -262,6 +295,14 @@ while [ ! -S "$LANE_SOCK" ]; do
 done
 chmod 666 "$LANE_SOCK" 2>/dev/null
 
+AGENT_PID=""
+if [ "$MODEMIFD_VPCD" = 1 ]; then
+    say "vpcd agent: $VPCD_AGENT -> 127.0.0.1:$VPCD_PORT (target $MODEMIFD_ADDR)"
+    # shellcheck disable=SC2086  # VPCD_AGENT may carry wrapper args (qemu)
+    $VPCD_AGENT --vpcd "127.0.0.1:$VPCD_PORT" --target "$MODEMIFD_ADDR" --reconnect-ms 200 &
+    AGENT_PID=$!
+fi
+
 say "waiting for reader '$FRIENDLYNAME' (by name, never first)"
 i=0
 until python3 "$HERE/suite.py" --list-readers 2>/dev/null | grep -q "^$FRIENDLYNAME"; do
@@ -274,5 +315,12 @@ until python3 "$HERE/suite.py" --list-readers 2>/dev/null | grep -q "^$FRIENDLYN
 done
 echo "reader up: $FRIENDLYNAME (sock $LANE_SOCK)"
 
-MODEMIFD_DRY_RUN=0 MODEMIFD_BACKEND=pcsc MODEMIFD_READER="$FRIENDLYNAME" \
+if [ "$MODEMIFD_VPCD" = 1 ]; then
+    # VPCDSLOTS=2 build: slots are "$FRIENDLYNAME 00 00" and "00 01";
+    # the exact slot-0 name keeps suite.py's match unambiguous.
+    MODEMIFD_READER_VALUE="$FRIENDLYNAME 00 00"
+else
+    MODEMIFD_READER_VALUE="$FRIENDLYNAME"
+fi
+MODEMIFD_DRY_RUN=0 MODEMIFD_BACKEND=pcsc MODEMIFD_READER="$MODEMIFD_READER_VALUE" \
     MODEMIFD_CARD="$MODEMIFD_CARD" run_suite_scripts
