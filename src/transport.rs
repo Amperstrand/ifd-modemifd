@@ -73,7 +73,17 @@ pub struct SerialLink {
 
 impl Read for SerialLink {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.file.read(buf)
+        // On a tty there is no EOF: Ok(0) with VMIN=0/VTIME>0 armed can
+        // only mean the read deadline expired (a genuine hangup — USB
+        // modem gone — surfaces as EIO). Map it to WouldBlock so the
+        // AT engine's deadline loop treats it as "no data yet" instead
+        // of "peer closed" — the 2026-11-21 live hang: healthy serial
+        // exchanges sit silent for 300-400 ms (card-service floor)
+        // while at_full polls at 150 ms.
+        match self.file.read(buf) {
+            Ok(0) => Err(io::Error::new(io::ErrorKind::WouldBlock, "serial read deadline")),
+            other => other,
+        }
     }
 }
 
@@ -87,7 +97,37 @@ impl Write for SerialLink {
 }
 
 impl ModemLink for SerialLink {
-    fn set_read_timeout(&mut self, _d: Option<Duration>) -> io::Result<()> {
+    /// Real read deadline via termios VMIN/VTIME — the ONLY deadline a
+    /// plain tty offers (a socket-style SO_RCVTIMEO does not exist for
+    /// character devices). `Some(d)` arms VMIN=0 + VTIME=ceil(d to
+    /// 0.1 s) so a read can never block past ~d; `None` restores the
+    /// blocking VMIN=1/VTIME=0 the open-time stty set up. Without this
+    /// the AT engine's `set_read_timeout` was a no-op and a tty whose
+    /// AT window died mid-exchange hung the read in the kernel forever
+    /// — only the between-reads deadline check existed, which a
+    /// blocked read never reaches (NR7101 live test, sha 7e979f45).
+    fn set_read_timeout(&mut self, d: Option<Duration>) -> io::Result<()> {
+        use std::os::unix::io::AsRawFd;
+        let fd = self.file.as_raw_fd();
+        let mut tio: libc::termios = unsafe { std::mem::zeroed() };
+        if unsafe { libc::tcgetattr(fd, &mut tio) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        match d {
+            Some(d) => {
+                // VTIME is unsigned-char tenths of seconds (max 25.5 s)
+                let tenths = (d.as_millis() + 99) / 100;
+                tio.c_cc[libc::VTIME] = tenths.clamp(1, 255) as u8;
+                tio.c_cc[libc::VMIN] = 0;
+            }
+            None => {
+                tio.c_cc[libc::VTIME] = 0;
+                tio.c_cc[libc::VMIN] = 1;
+            }
+        }
+        if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &tio) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
         Ok(())
     }
     fn set_nonblocking(&mut self, nb: bool) -> io::Result<()> {

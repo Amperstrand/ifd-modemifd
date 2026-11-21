@@ -122,6 +122,13 @@ pub fn run(cfg: AgentConfig) {
     // same doctrine as the bench-proven firmware client (ccid-firmware-rs
     // vpcd.rs #349: connection-local state must not reset process state).
     let reader = Reader::new(&cfg.target);
+    // Live-state visibility (2026-11-21 live test): this modem's AT
+    // windows exist only ~minutes after a uqmi reset-mode poke, so
+    // "handshake failing" is the NORMAL steady state for long
+    // stretches. Log the first failure and then a slow heartbeat
+    // (every 20th attempt ≈ 10 s at the 500 ms cadence) instead of
+    // one line per retry, plus the recovery line when a window opens.
+    let mut handshake_fails: u32 = 0;
     loop {
         // MODEM FIRST, VPCD SECOND (2026-11-21 bench bug, see
         // docs/evidence/vpcd-handshake-debug/): the driver's presence
@@ -135,9 +142,26 @@ pub fn run(cfg: AgentConfig) {
         // connect returns; stay unconnected while the modem is down
         // (reader honestly absent instead of vpcd churn).
         if !reader.init_handshake() {
-            wlog(&mut log, "modem-vpicc: modem handshake failed; not connecting to vpcd");
+            handshake_fails += 1;
+            if handshake_fails == 1 || handshake_fails.is_multiple_of(20) {
+                wlog(
+                    &mut log,
+                    &format!(
+                        "modem-vpicc: modem handshake failed (attempt {handshake_fails}); not connecting to vpcd"
+                    ),
+                );
+            }
             std::thread::sleep(Duration::from_millis(cfg.reconnect_ms));
             continue;
+        }
+        if handshake_fails > 0 {
+            wlog(
+                &mut log,
+                &format!(
+                    "modem-vpicc: AT window opened after {handshake_fails} failed handshake attempt(s)"
+                ),
+            );
+            handshake_fails = 0;
         }
         match TcpStream::connect(&cfg.vpcd_addr) {
             Ok(mut sock) => {

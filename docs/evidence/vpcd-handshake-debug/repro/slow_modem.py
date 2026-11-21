@@ -8,12 +8,17 @@ agent's AT engine (2 s / 2.5 s) but together past the driver's 2 s answer
 window. This is exactly the "slow-but-healthy tty" that lost the ATR race
 on the bench.
 
+`--go-silent-after N` models the NR7101 AT-window death (2026-11-21
+live test, sha 7e979f45): after N answered exchanges the port goes
+SILENT — lines are consumed, nothing is answered — which is the state
+that used to hang the agent's blocking serial read forever.
+
 Dialect mirrors tests/hardware/mock_modem.py (echo discipline, strict
 +CSIM framing); APDUs answer the canned 9000.
 
 Usage:
   slow_modem.py [--listen 127.0.0.1:17002] [--ate1-delay-ms 1500]
-                [--csim-test-delay-ms 1500]
+                [--csim-test-delay-ms 1500] [--go-silent-after N]
 
 Zero real-AT side effects: loopback only.
 """
@@ -48,8 +53,10 @@ def reply_lines(line: str) -> list[str] | None:
     return None
 
 
-def handle(sock: socket.socket, ate1_ms: int, csim_test_ms: int) -> None:
+def handle(sock: socket.socket, ate1_ms: int, csim_test_ms: int,
+           go_silent_after: int | None) -> None:
     buf = b""
+    answered = 0
     try:
         while True:
             chunk = sock.recv(4096)
@@ -61,6 +68,8 @@ def handle(sock: socket.socket, ate1_ms: int, csim_test_ms: int) -> None:
                 line = raw.lstrip(b"\n").decode("ascii", "replace").strip()
                 if not line:
                     continue
+                if go_silent_after is not None and answered >= go_silent_after:
+                    continue  # AT window died: consume the line, answer nothing
                 delay_ms = 0
                 if line == "ATE1":
                     delay_ms = ate1_ms
@@ -78,6 +87,7 @@ def handle(sock: socket.socket, ate1_ms: int, csim_test_ms: int) -> None:
                 if resp and resp[-1] == "ERROR":
                     continue
                 sock.sendall(b"\r\n\r\nOK\r\n")
+                answered += 1
     except OSError:
         return
 
@@ -87,6 +97,10 @@ def main() -> int:
     ap.add_argument("--listen", default="127.0.0.1:17002")
     ap.add_argument("--ate1-delay-ms", type=int, default=1500)
     ap.add_argument("--csim-test-delay-ms", type=int, default=1500)
+    ap.add_argument("--go-silent-after", type=int, default=None, metavar="N",
+                    help="after N answered exchanges the port goes silent "
+                         "(AT-window death; the state that hung the "
+                         "deployed agent's blocking serial read)")
     args = ap.parse_args()
 
     host, _, port = args.listen.rpartition(":")
@@ -94,14 +108,17 @@ def main() -> int:
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((host or "127.0.0.1", int(port)))
     srv.listen(8)
-    print("slow_modem listening on {} (ATE1 +{}ms, AT+CSIM=? +{}ms)".format(
-        args.listen, args.ate1_delay_ms, args.csim_test_delay_ms), flush=True)
+    print("slow_modem listening on {} (ATE1 +{}ms, AT+CSIM=? +{}ms, "
+          "go_silent_after={})".format(args.listen, args.ate1_delay_ms,
+                                       args.csim_test_delay_ms,
+                                       args.go_silent_after), flush=True)
     try:
         while True:
             sock, _ = srv.accept()
             threading.Thread(
                 target=handle,
-                args=(sock, args.ate1_delay_ms, args.csim_test_delay_ms),
+                args=(sock, args.ate1_delay_ms, args.csim_test_delay_ms,
+                      args.go_silent_after),
                 daemon=True,
             ).start()
     except KeyboardInterrupt:

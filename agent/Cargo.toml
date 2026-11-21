@@ -9,3 +9,8 @@ publish = false
 
 [dependencies]
 ifd-modemifd = { path = ".." }
+
+[dev-dependencies]
+# pty allocation for the tty-path regression tests (same crate as the
+# lib's regular dependency — no new external crate)
+libc = "0.2"

@@ -149,10 +149,11 @@ NEW: {"accepts": 1, "answered": 70, "ejects": 0, "peer_closed": 0,
 
 ## Validation
 
-- `cargo test -p modem-vpicc --test vpcd` — 7/7 green (3 codec units,
-  the original contract battery, the 2 new regression tests).
-- `cargo test --workspace` — everything green **except**
-  `ifd-modemifd --test logging_enabled::apdu_hex_not_logged_by_default`,
+- `cargo test -p modem-vpicc --test vpcd` — 10/10 green (3 codec units,
+  the original contract battery, the 2 driver-machine regression tests,
+  and the 3 pty-based tty-window regressions from iteration 2).
+- `cargo test -p ifd-modemifd` — everything green **except**
+  `logging_enabled::apdu_hex_not_logged_by_default`,
   which fails identically on **pristine master** (verified via stash) —
   pre-existing, unrelated to this change (it exercises
   `Reader::transmit` logging, not the agent or vpcd path). Not touched
@@ -169,3 +170,64 @@ NEW: {"accepts": 1, "answered": 70, "ejects": 0, "peer_closed": 0,
   AR over AT — documented limitation).
 - Deploying to the router still requires the mipsel build + procd
   restart — out of scope for this offline task (no device access).
+
+## Iteration 2 — live test follow-up (2026-11-21, deployed sha 7e979f45)
+
+The mipsel build of `43127dc` confirmed the fix direction (the ATR race
+is gone) and exposed the next bug: after two full reset→window cycles
+the agent logged only its config line and went silent — no handshake
+verdict, no vpcd TCP (verified host-side), process alive for minutes.
+
+**Root cause: `SerialLink::set_read_timeout` was a no-op.** The AT
+engine's `at_full` arms a per-read timeout (150 ms) and checks its
+exchange deadline *between* reads — but on a tty the only real deadline
+mechanism is termios VMIN/VTIME, and the stub did nothing, so the
+response read blocked in the kernel (open-time `stty min 1 time 0`).
+When the modem's AT window died mid-handshake (this modem's windows
+last only ~minutes after a `uqmi --set-device-operating-mode` reset),
+the blocked read never returned to check the deadline → `run()` never
+reached its retry loop. The mock battery couldn't catch this: every
+mock modem is TCP, where `set_read_timeout` is a real socket timeout.
+
+**Fix (`src/transport.rs`):** `SerialLink::set_read_timeout` now arms
+VMIN=0 + VTIME=ceil(d/100 ms) via `tcgetattr`/`tcsetattr` (None
+restores VMIN=1/VTIME=0). `SerialLink::read` maps the resulting
+`Ok(0)` (timer expiry — a tty has no EOF; hangup is EIO) to
+`WouldBlock` so the deadline loop treats it as "no data yet" instead
+of "peer closed" (healthy serial exchanges sit silent 300–400 ms — the
+card-service floor — while the engine polls at 150 ms). Every
+`at_full` exchange is now bounded by its existing deadline on ALL
+transports: handshake worst case ≈ 2 s + 2.5 s + one read overshoot.
+
+**Plus rate-limited live-state logging (`src/agent.rs`)**: the first
+failed handshake and then every 20th attempt (≈10 s at the 500 ms
+cadence) is logged, and the recovery ("AT window opened after N failed
+attempts") is announced — the fail-fast-while-AT-dead steady state is
+now visible in the opt-in log without spam.
+
+**Regression tests** (`agent/tests/vpcd.rs`, pty-based — the only
+faithful local double for a serial port):
+
+- `tty_read_deadline_is_enforced` — a serial read under an armed
+  deadline returns `WouldBlock` when the timer fires (this is the
+  exact deployed hang; verified to FAIL against the no-op stub).
+- `tty_window_death_mid_handshake_is_bounded_and_recovers` — ATE1
+  answered, AT+CSIM=? goes silent: `init_handshake` fails bounded
+  (≤8 s guard over the ~2.7 s deadline sum) and the NEXT attempt once
+  the window reopens succeeds.
+- `agent_rides_tty_windows_with_real_binary` — the production steady
+  state through the real binary on a real tty: window closed at boot →
+  bounded handshake failures and ZERO vpcd connections (health gate);
+  window opens → connect → first ATR probe answered in-window → one
+  stable connection, zero ejects.
+
+A/B proof: with `set_read_timeout` reverted to the no-op stub, all
+three tty tests fail (`agent_rides…` reproduces the live symptom
+verbatim: "window opened but the agent never served — accepts=0");
+with the fix the suite is 10/10. `slow_modem.py` also gained
+`--go-silent-after N` to model window death in the python repro kit.
+
+Expected steady state on the router (owner's framing): handshake fails
+fast while AT-dead, retry every 500 ms, connect the moment a window
+opens, serve until it closes; the serve loop already tolerates
+session-end (bounded `at_full` + reconnect).
