@@ -18,7 +18,8 @@ as a PC/SC reader. Goals in priority order:
     HOST (all local PC/SC, standard parts):        ROUTER (local to the modem):
       lpac → pcscd → libifdvpcd-amperstrand.so       modem-vpicc agent (Rust, musl)
                   ↖ vpcd protocol over LAN TCP  ←──   → AT+CSIM → SIM
-                    (agent connects OUT; vpcd         stty raw setup + File tty I/O,
+                    (agent connects OUT; vpcd         NATIVE termios raw setup +
+                      listener on a bound interface)    File tty I/O,
                      listens on a bound interface)    echo-correlation, 250 ms pacing,
                                                      strict CSIM parse, drop filters
 
@@ -70,7 +71,9 @@ ccid-firmware-rs campaign).
 - Logging matches the driver doctrine: opt-in, 0600, no-symlink, APDU
   content behind its own opt-in (v3.4.1 semantics).
 - No new packages on the router beyond what is disclosed in the tracker
-  (currently: GNU stty 9.7, modem-lane helper; the agent binary itself
+  (currently: modem-lane helper only — the tty is configured with
+  NATIVE termios, no stty binary needed (2026-11-21 round 4: this
+  router has none); the agent binary itself
   lives on flash, ~1–2 MB, deployed via scp with recorded sha256).
 
 ## Migration / sequencing
@@ -78,8 +81,8 @@ ccid-firmware-rs campaign).
 1. Frame codec + unit tests in this crate (std-only; same conventions).
 2. `modem-vpicc` agent binary in this crate (`[[bin]]`), reusing
    `at.rs`/`reader.rs` logic; `--target tcp://h:p` mode for mock tests,
-   `--target tty:/dev/ttyUSBx` for the router (stty subprocess + File
-   I/O keeps the crate std-only).
+   `--target tty:/dev/ttyUSBx[,…]` for the router (NATIVE termios via
+   libc — no stty dependency, no subprocess; poll(2)-gated reads).
 3. Host: build libifdvpcd-amperstrand.so (sibling script), reader entry
    (`DEVICENAME /dev/null:0x8C7B`, `CHANNELID <port>`), lane-runner vpcd
    mode reusing the namespace/env-injection/lock machinery.

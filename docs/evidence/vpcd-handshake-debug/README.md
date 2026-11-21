@@ -303,3 +303,54 @@ this branch); the transport-facing suites (`mock_at` 28, ssh,
 pacing, vpcd 13) are green. Loopback driver-machine repro on the new
 release binary: accepts=1, answered=26, ejects=0 (unchanged vpcd
 behavior).
+
+## Iteration 4 — the actual root cause of EVERY live stall (2026-11-21, round-4 live log)
+
+The round-3 diagnostics cracked it on the next deployment: the live
+log read
+
+```
+tty /dev/ttyUSBx: stty spawn failed: No such file or directory (os error 2); open ok; termios arm ok
+```
+
+**This OpenWrt router has NO `stty` binary at all** — not a busybox
+applet, not installable from the broken apk feed; the arch doc's
+"GNU stty 9.7" was only ever deployed on the production router.
+Every stall across rounds 1–3 traces to this: the tty-open path
+configured the port by spawning `stty -F … 115200 raw -echo min 1
+time 0`; the spawn failed with ENOENT, the failure was ignored, and
+the tty stayed in **canonical mode** —
+
+- under ICANON, VMIN/VTIME are ignored by the kernel → the blocking
+  read hung (round-2's Threads:1 stall) even with the deadline
+  "armed" (`tcsetattr` accepts the values; they are inert);
+- kernel ECHO echoed the modem's inbound bytes back at it and
+  line-buffered/translated both directions → the AT handshake could
+  never succeed **regardless of AT windows** (why "ttyUSB3 in-window"
+  behaved identically);
+- round 3's poll(2) gating fixed the HANG (bounded retries, visible
+  heartbeat) but not the futility — exactly as its log then revealed.
+
+**Fix:** the stty spawn is GONE. `SerialLink::configure_raw()`
+configures the tty natively via libc — `tcgetattr` → `cfmakeraw` →
+`CREAD|CLOCAL` → `VMIN=1/VTIME=0` → `cfsetispeed/cfsetospeed(B115200)`
+→ `tcsetattr(TCSANOW)` — the exact semantics of the old invocation,
+minus the external process. A configure failure now fails the open
+(fast, honest retry, carried in the open report) instead of serving
+a cooked-mode link. The crate already links libc; the agent's tty
+path now spawns zero child processes on any OpenWrt target. (The
+ssh:// remote relay still uses router-side stty by design — that is
+the pcscd-side path, documented separately.)
+
+**Regression test** (`tty_configured_natively_without_stty`):
+a PATH containing ONLY a booby-trapped `stty` (records its own
+execution, no other binaries reachable) — the open must succeed, NO
+stty execution may occur (marker absent), the open report must show
+`native termios ok`, and a fresh probe `tcgetattr` on the pty must
+show the raw state actually applied (ICANON off, ECHO off, ICRNL
+off, OPOST off, CS8, VMIN=1/VTIME=0, B115200). A/B-verified:
+reinserting an `stty` spawn into `open_serial` makes this test fail
+with "the tty path spawned stty"; the native build passes 14/14.
+
+Suite: agent 14/14; workspace 49 passed / 4 pre-existing
+logging-family failures (identical on pristine `c3e8096`, untouched).

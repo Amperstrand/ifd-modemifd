@@ -756,6 +756,92 @@ fn reader_init_handshake_bounded(pts: &str) -> bool {
     reader.init_handshake()
 }
 
+/// Round-4 regression — THE root cause of every live stall: the
+/// deployed OpenWrt router has NO stty binary, and the old open path
+/// spawned one, so the tty stayed in CANONICAL mode (VMIN/VTIME
+/// ignored under ICANON → blocking reads; kernel ECHO garbling the
+/// link) and the handshake could never succeed regardless of AT
+/// windows. The tty path must configure termios NATIVELY and never
+/// spawn a child process.
+#[test]
+fn tty_configured_natively_without_stty() {
+    use std::os::unix::io::AsRawFd;
+
+    let (master, pts) = open_pty();
+
+    // booby-trap: a PATH containing ONLY an stty that records its
+    // execution and fails. If the transport ever spawns stty again,
+    // the marker appears and this test fails.
+    // trap dir lives under the workspace target/ (gitignored, on-disk):
+    // /tmp is a saturated tmpfs on this bench (quota errors)
+    let trap_dir =
+        std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../target")).join(format!(
+            "stty-trap-{}",
+            std::process::id()
+        ));
+    let _ = std::fs::remove_dir_all(&trap_dir);
+    std::fs::create_dir_all(&trap_dir).expect("trap dir");
+    // builtin-only recorder: `: >` needs no PATH (a trap that calls
+    // touch would silently fail under the poisoned PATH)
+    let trap = "#!/bin/sh\n: > \"$0.marker\"\nexit 1\n";
+    std::fs::write(trap_dir.join("stty"), trap).expect("trap stty");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(trap_dir.join("stty"), std::fs::Permissions::from_mode(0o755));
+    }
+
+    let old_path = std::env::var("PATH").unwrap_or_default();
+    std::env::set_var("PATH", &trap_dir);
+    let link = ifd_modemifd::transport::open(&format!("tty:{pts}"));
+    std::env::set_var("PATH", &old_path);
+
+    assert!(
+        link.is_some(),
+        "tty open must succeed with NO usable stty on PATH"
+    );
+    assert!(
+        !trap_dir.join("stty.marker").exists(),
+        "the tty path spawned stty — native termios is required (no stty on OpenWrt)"
+    );
+    let report = ifd_modemifd::transport::last_open_report().unwrap_or_default();
+    assert!(
+        report.contains("native termios ok"),
+        "open report must show native termios config: {report}"
+    );
+    drop(link);
+
+    // prove the slave is actually RAW now: fresh open + tcgetattr.
+    // A fresh pty starts cooked (ICANON|ECHO) — only our native
+    // configure could have flipped it.
+    let probe = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&pts)
+        .expect("probe open");
+    let mut tio: libc::termios = unsafe { std::mem::zeroed() };
+    assert_eq!(
+        unsafe { libc::tcgetattr(probe.as_raw_fd(), &mut tio) },
+        0,
+        "tcgetattr on probe"
+    );
+    assert_eq!(tio.c_lflag & libc::ICANON, 0, "canonical mode must be OFF");
+    assert_eq!(tio.c_lflag & libc::ECHO, 0, "kernel echo must be OFF");
+    assert_eq!(tio.c_iflag & libc::ICRNL, 0, "CR->NL translation OFF");
+    assert_eq!(tio.c_oflag & libc::OPOST, 0, "output post-processing OFF");
+    assert_eq!(tio.c_cflag & libc::CSIZE, libc::CS8, "8-bit chars");
+    assert_eq!(tio.c_cc[libc::VMIN], 1, "VMIN=1 base state");
+    assert_eq!(tio.c_cc[libc::VTIME], 0, "VTIME=0 base state");
+    assert_eq!(
+        unsafe { libc::cfgetispeed(&tio) },
+        libc::B115200,
+        "baud pinned to 115200"
+    );
+    drop(probe);
+    drop(master); // keep the pty pair alive until assertions are done
+    let _ = std::fs::remove_dir_all(&trap_dir);
+}
+
 /// Round-3 regression (deployed sha a8e772da hung with Threads:1 in a
 /// blocking serial read despite the VMIN/VTIME fix): the deadline
 /// primitive must be termios-INDEPENDENT. Sabotage the link into

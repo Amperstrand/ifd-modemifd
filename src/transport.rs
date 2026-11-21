@@ -119,12 +119,53 @@ pub fn last_open_report() -> Option<String> {
     .clone()
 }
 
-/// Local tty link: termios setup via an `stty` subprocess (the crate
-/// targets routers whose shells own that job; identical settings to the
-/// ssh relay) and plain File I/O — read deadlines are served by the
-/// AT engine's nonblocking path.
+/// Local tty link: NATIVE termios setup (round 4: the deployed OpenWrt
+/// router has NO stty binary — busybox without the applet, broken apk
+/// feed — so the old `stty -F … raw -echo min 1 time 0` spawn failed
+/// with ENOENT and silently left the tty in canonical mode, where
+/// reads block on line boundaries (VMIN/VTIME are ignored under
+/// ICANON — the round-2 live hang) and kernel ECHO/line buffering
+/// garble the modem link both ways). See `SerialLink::configure_raw`.
 pub struct SerialLink {
     file: std::fs::File,
+}
+
+impl SerialLink {
+    /// Configure the tty NATIVELY (round 4): `cfmakeraw` + B115200 +
+    /// CREAD|CLOCAL + VMIN=1/VTIME=0 — the exact semantics of the
+    /// `stty 115200 raw -echo min 1 time 0` this path used to spawn,
+    /// minus the external process (the deployed router has no stty
+    /// binary; the spawn's ENOENT left the tty canonical — reads
+    /// blocked on line boundaries with VMIN/VTIME ignored, and kernel
+    /// ECHO corrupted the modem exchange in both directions).
+    fn configure_raw(&mut self) -> io::Result<()> {
+        use std::os::unix::io::AsRawFd;
+        let fd = self.file.as_raw_fd();
+        // SAFETY: plain termios ioctls on our own fd; the termios
+        // struct is fully initialized by tcgetattr before use.
+        let mut tio: libc::termios = unsafe { std::mem::zeroed() };
+        if unsafe { libc::tcgetattr(fd, &mut tio) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        unsafe { libc::cfmakeraw(&mut tio) };
+        // CLOCAL: a USB modem tty has no carrier to wait for; CREAD:
+        // receiver on (belt and braces). Blocking base state — the AT
+        // engine poll-gates every read anyway (wait_readable).
+        tio.c_cflag |= libc::CREAD | libc::CLOCAL;
+        tio.c_cc[libc::VMIN] = 1;
+        tio.c_cc[libc::VTIME] = 0;
+        unsafe {
+            if libc::cfsetispeed(&mut tio, libc::B115200) != 0
+                || libc::cfsetospeed(&mut tio, libc::B115200) != 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            if libc::tcsetattr(fd, libc::TCSANOW, &tio) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Read for SerialLink {
@@ -212,32 +253,31 @@ impl ModemLink for SerialLink {
 }
 
 fn open_serial(tty: &str) -> Option<Box<dyn ModemLink>> {
-    let stty = Command::new("stty")
-        .args(["-F", tty, "115200", "raw", "-echo", "min", "1", "time", "0"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-    let stty_note = match &stty {
-        Ok(s) if s.success() => "stty ok".to_string(),
-        Ok(s) => format!("stty exited {s} (continuing — flags may be partial)"),
-        Err(e) => format!("stty spawn failed: {e}"),
-    };
     match std::fs::OpenOptions::new().read(true).write(true).open(tty) {
         Ok(file) => {
             let mut link = SerialLink { file };
-            // Verify the read-deadline mechanism AT OPEN: arm VMIN/VTIME
-            // once and record whether termios accepted it. at_full no
-            // longer depends on this (poll-gated reads), but a refusal
-            // here is the live signature of a wedged USB tty.
-            let arm = link
-                .set_read_timeout(Some(Duration::from_millis(150)))
-                .map(|_| "ok".to_string())
-                .unwrap_or_else(|e| format!("REFUSED: {e}"));
-            set_open_report(format!("tty {tty}: {stty_note}; open ok; termios arm {arm}"));
-            Some(Box::new(link))
+            // NATIVE termios, no external process (round 4 — see the
+            // SerialLink doc). A configure failure means the port is
+            // wedged or alien: fail the open (fast, honest retry)
+            // instead of serving a cooked-mode link.
+            let cfg = link.configure_raw().map_or_else(
+                |e| {
+                    set_open_report(format!("tty {tty}: open ok; native termios FAILED: {e}"));
+                    crate::log(&format!("serial termios configure on {} failed: {}", tty, e));
+                    None::<Box<dyn ModemLink>>
+                },
+                |()| {
+                    set_open_report(format!(
+                        "tty {tty}: open ok; native termios ok (raw, 115200, \
+                         VMIN=1/VTIME=0, no stty needed)"
+                    ));
+                    Some(Box::new(link) as Box<dyn ModemLink>)
+                },
+            );
+            cfg
         }
         Err(e) => {
-            set_open_report(format!("tty {tty}: {stty_note}; open FAILED: {e}"));
+            set_open_report(format!("tty {tty}: open FAILED: {e}"));
             crate::log(&format!("serial transport to {} failed: {}", tty, e));
             None
         }
