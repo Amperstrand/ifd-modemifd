@@ -1,8 +1,12 @@
 # vpcd handshake debug — NR7101 agent rejected by libifdvpcd-amperstrand (2026-11-21)
 
-**Status: ROOT-CAUSED, fixed agent-side, reproduced offline old-vs-new.**
+**Status: RESOLVED — full chain validated live 2026-11-21 (round 6):
+agent → tty → modem SIM served through pcscd to a real PC/SC client
+(connect, ATR, SELECT, READ BINARY all green). See "Final live
+validation" at the end.**
 Branch `debug/vpcd-handshake` (local, not pushed). No router/modem was
-touched; all analysis is source-level plus loopback mocks.
+touched by this lane; all analysis is source-level plus loopback mocks,
+with live verification driven from the bench each round.
 
 ## Observed failure (bench, 2026-11-21)
 
@@ -426,3 +430,49 @@ against a live VICC); (b) retry SCardConnect for up to ~2 min;
 
 Suite: agent 15/15 (new activation-sequence regression); workspace
 unchanged (49 pass + the 4 pre-existing logging failures).
+
+## Final live validation (round 6, 2026-11-21) — THE CHAIN WORKS
+
+Deployed the round-5 protocol build (`2aa6d1f`, mipsel artifact
+`adc538aa`) to the NR7101: the agent connects via tty, and on
+ai-legion a **real PC/SC client session succeeded end-to-end** —
+
+- `SCardConnect` → ATR `3B9F96801F478031E073F6211B66042040900073`
+  (the agent's FAKE_ATR, served through
+  pcscd → libifdvpcd-amperstrand ← modem-vpicc ← tty ← RG502Q ←
+  the ICE card's SIM slot),
+- SELECT MF → `9000` @ **10 ms**,
+- SELECT EF.ICCID (2FE2) → `9000` @ **394 ms** (right at the modem's
+  ~300–400 ms card-service floor — pacing behaved exactly as
+  modeled),
+- READ BINARY → the 10-byte EF.ICCID returned **byte-perfect**
+  (raw on-card nibble-swapped form verified to deswizzle to the
+  card's known ICCID — digits withheld per the species-level records
+  rule).
+
+### Round-by-round ledger (branch commit → deployed artifact sha → live verdict)
+
+| round | fix (branch commit) | deployed sha | live verdict |
+|---|---|---|---|
+| 1 — ATR race | `43127dc` handshake before vpcd connect | `7e979f45` | direction confirmed; exposed the blocking modem handshake |
+| 2 — serial deadline | `c3e8096` VMIN/VTIME arm | `a8e772da` | still hung (Threads:1, wchan empty) — termios unreliable on the real USB tty |
+| 3 — poll-gated reads | `1f2dbf3` wait_readable + open reports + multi-target | (round-4 test build; sha not recorded in the report) | the open-report diagnostics cracked it: **no stty binary on the router** |
+| 4 — native termios | `a20a25f` configure_raw, no child processes | `4469435d` | agent connected, stable session, all probes answered; SCardConnect still failing |
+| 5 — send-only controls | `2aa6d1f` ON/RESET no-reply (skew fix), split logging | `adc538aa` | **full client session green** (numbers above) |
+
+### Credit
+
+This arc was a bench collaboration, end to end: each round was
+owner-driven live testing on the NR7101 + ai-legion (kernel evidence,
+deployed-artifact shas, live logs, the no-stty discovery, the working
+session numbers) paired with offline source analysis and loopback
+mocks on this lane. The evidence base that made the offline work
+possible — the pinned driver build + patch, the strace-verified pcscd
+wire shapes, and the two proven vpicc clients — lives in
+ccid-firmware-rs (`tests/hardware/host/`, `docs/transport-research-154.md`,
+TRANSMIT_DEAD_WINDOW.md, `crates/ccid-service/src/vpcd.rs`,
+VpcdBridge.java).
+
+Five-round arc: ATR-race → blocking handshake → missing stty →
+control semantics → **working**. Branch ready for owner review for
+merging upstream.
