@@ -33,11 +33,23 @@ ccid-firmware-rs campaign).
 ## Wire protocol (reference: org.amperstrand.VpcdBridge, bench-proven)
 
 - Frame = 2-byte big-endian length + payload.
-- 1-byte control payloads:
-  - `0x04` (RESET), `0x02` (ATR request) → reply one ATR frame;
-  - `0x00` (OFF) → **NO reply** (an empty ack de-syncs the driver's next
-    ATR probe — bench-verified); deselect semantics.
+- 1-byte control payloads (values per upstream `vpcd.h` @ the pinned
+  `93286a9`: OFF=0, ON=1, RESET=2, ATR=4):
+  - `0x04` (ATR request), `0x02` (RESET) → reply one ATR frame;
+  - `0x00` (OFF), `0x01` (ON) → **NO reply** (an empty ack for OFF
+    de-syncs the driver's next ATR probe — bench-verified); deselect /
+    select semantics.
 - Length > 1 = C-APDU → reply one R-APDU frame (or status-word-only).
+- **Timing contract (2026-11-21 bench lesson,
+  docs/evidence/vpcd-handshake-debug/)**: the driver's presence poll
+  accepts the agent's connection within ~400 ms of connect and starts a
+  **2 s** answer window (`VPCD_RECV_TIMEOUT_SEC`,
+  libifdvpcd-amperstrand) per request — an unanswered request ejects the
+  socket. All slow work (modem handshake, transport open) must happen
+  BEFORE the vpcd connect; the serve loop must start reading the moment
+  connect returns. A handshake wedged between connect and serve loses
+  the window every cycle: driver-side FIN-WAIT-2, pcscd "no smart
+  card", silent reconnect churn.
 - The agent is the TCP **client** and reconnects every ~500 ms on error;
   a vpcd slot is single-client (never probe the port while owned).
 - Operational: after a pcscd restart the vpcd slot answers the ATR probe

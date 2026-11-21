@@ -77,6 +77,12 @@ fn handle_frame(
             wlog(log, "vpcd: OFF (no reply)");
             Ok(())
         }
+        Frame::Control(vpcd::CTRL_ON) => {
+            // upstream vicc_poweron(): ON is fire-and-forget too — no
+            // reply (vpcd.h; same no-ack rule as OFF)
+            wlog(log, "vpcd: ON (no reply)");
+            Ok(())
+        }
         Frame::Control(vpcd::CTRL_ATR) | Frame::Control(vpcd::CTRL_RESET) => {
             wlog(log, "vpcd: ATR/RESET -> ATR");
             vpcd_sock.write_all(&vpcd::encode(atr))
@@ -112,17 +118,32 @@ pub fn run(cfg: AgentConfig) {
             cfg.reconnect_ms
         ),
     );
+    // The Reader (and its cached modem stream) survives reconnects —
+    // same doctrine as the bench-proven firmware client (ccid-firmware-rs
+    // vpcd.rs #349: connection-local state must not reset process state).
+    let reader = Reader::new(&cfg.target);
     loop {
+        // MODEM FIRST, VPCD SECOND (2026-11-21 bench bug, see
+        // docs/evidence/vpcd-handshake-debug/): the driver's presence
+        // poll accepts this socket within ~400 ms of connect and starts
+        // a 2 s answer window (libifdvpcd-amperstrand
+        // VPCD_RECV_TIMEOUT_SEC). Doing the modem handshake BETWEEN
+        // connect and the serve loop loses that window on a slow tty —
+        // the driver ejects (host socket lingers FIN-WAIT-2), pcscd
+        // never sees the card, and the agent reconnect-churns forever.
+        // Handshake before connect; enter the serve loop the instant
+        // connect returns; stay unconnected while the modem is down
+        // (reader honestly absent instead of vpcd churn).
+        if !reader.init_handshake() {
+            wlog(&mut log, "modem-vpicc: modem handshake failed; not connecting to vpcd");
+            std::thread::sleep(Duration::from_millis(cfg.reconnect_ms));
+            continue;
+        }
         match TcpStream::connect(&cfg.vpcd_addr) {
             Ok(mut sock) => {
-                let reader = Reader::new(&cfg.target);
-                if reader.init_handshake() {
-                    wlog(&mut log, "modem-vpicc: connected, modem handshake ok");
-                    if let Err(e) = serve_connection(&mut sock, &reader, &cfg.atr, &mut log) {
-                        wlog(&mut log, &format!("modem-vpicc: session ended: {e}"));
-                    }
-                } else {
-                    wlog(&mut log, "modem-vpicc: modem handshake failed; retrying");
+                wlog(&mut log, "modem-vpicc: connected (modem handshake done pre-connect)");
+                if let Err(e) = serve_connection(&mut sock, &reader, &cfg.atr, &mut log) {
+                    wlog(&mut log, &format!("modem-vpicc: session ended: {e}"));
                 }
             }
             Err(e) => wlog(&mut log, &format!("modem-vpicc: vpcd connect failed: {e}")),

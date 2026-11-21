@@ -1,14 +1,19 @@
 //! vpcd wire protocol (vsmartcard virtual reader): every frame is a
-//! 2-byte big-endian length + payload. One-byte payloads are controls —
-//! OFF (0x00) is fire-and-forget and must NEVER be answered, ATR (0x02)
-//! and RESET (0x04) are each answered with exactly one ATR frame. Any
-//! longer payload is a C-APDU answered with one R-APDU frame. Reference
-//! implementation: org.amperstrand.VpcdBridge (ccid-firmware-rs), plus
-//! tests/hardware/VPCD-ARCHITECTURE.md.
+//! 2-byte big-endian length + payload. One-byte payloads are controls.
+//! Values per upstream vpcd.h (pinned 93286a9): OFF=0, ON=1, RESET=2,
+//! ATR=4. OFF and ON are fire-and-forget and must NEVER be answered
+//! (an empty ack for OFF de-syncs the driver's next ATR probe —
+//! bench-verified); ATR and RESET are each answered with exactly one
+//! ATR frame. Any longer payload is a C-APDU answered with one R-APDU
+//! frame. Every answer must land inside the driver's 2 s receive
+//! window (libifdvpcd-amperstrand VPCD_RECV_TIMEOUT_SEC) or the socket
+//! is ejected. Reference implementation: org.amperstrand.VpcdBridge
+//! (ccid-firmware-rs), plus tests/hardware/VPCD-ARCHITECTURE.md.
 
 pub const CTRL_OFF: u8 = 0x00;
-pub const CTRL_ATR: u8 = 0x02;
-pub const CTRL_RESET: u8 = 0x04;
+pub const CTRL_ON: u8 = 0x01;
+pub const CTRL_RESET: u8 = 0x02;
+pub const CTRL_ATR: u8 = 0x04;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Frame {
