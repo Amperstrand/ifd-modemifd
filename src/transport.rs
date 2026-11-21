@@ -34,6 +34,39 @@ use std::time::Duration;
 pub trait ModemLink: Read + Write + Send {
     fn set_read_timeout(&mut self, d: Option<Duration>) -> io::Result<()>;
     fn set_nonblocking(&mut self, nb: bool) -> io::Result<()>;
+    /// Block until the link has readable data or `d` elapses —
+    /// poll(2)-based where a raw fd exists. Returns Ok(true) when a
+    /// read should be attempted (data ready OR hangup surfaced),
+    /// Ok(false) on timeout. This is the AT engine's ONLY deadline
+    /// primitive as of 2026-11-21 round 3: termios VMIN/VTIME proved
+    /// unreliable on the real option-driver USB tty (the deployed
+    /// agent hung in a blocking read with the deadline armed — pty
+    /// tests could not reproduce), so boundedness must not depend on
+    /// termios state at all.
+    fn wait_readable(&mut self, d: Option<Duration>) -> io::Result<bool>;
+}
+
+fn poll_readable(fd: std::os::unix::io::RawFd, d: Option<Duration>) -> io::Result<bool> {
+    let mut pfd = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    let ms = d
+        .map(|x| x.as_millis().min(i32::MAX as u128) as i32)
+        .unwrap_or(-1);
+    // SAFETY: poll(2) on a borrowed fd with a valid pfd; EINTR retried.
+    let rc = unsafe { libc::poll(&mut pfd, 1, ms) };
+    if rc < 0 {
+        let err = io::Error::last_os_error();
+        if err.kind() == io::ErrorKind::Interrupted {
+            return Ok(false);
+        }
+        return Err(err);
+    }
+    // POLLHUP/POLLERR also count as "readable": the following read()
+    // then surfaces the EOF/error instead of the deadline spinning.
+    Ok(rc > 0 && (pfd.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR)) != 0)
 }
 
 impl ModemLink for TcpStream {
@@ -42,6 +75,10 @@ impl ModemLink for TcpStream {
     }
     fn set_nonblocking(&mut self, nb: bool) -> io::Result<()> {
         TcpStream::set_nonblocking(self, nb)
+    }
+    fn wait_readable(&mut self, d: Option<Duration>) -> io::Result<bool> {
+        use std::os::unix::io::AsRawFd;
+        poll_readable(self.as_raw_fd(), d)
     }
 }
 
@@ -54,6 +91,7 @@ pub fn open(target: &str) -> Option<Box<dyn ModemLink>> {
         match open_ssh(rest) {
             Ok(l) => Some(Box::new(l)),
             Err(e) => {
+                set_open_report(format!("ssh {target}: spawn failed: {e}"));
                 crate::log(&format!("ssh transport to {} failed: {}", target, e));
                 None
             }
@@ -63,17 +101,86 @@ pub fn open(target: &str) -> Option<Box<dyn ModemLink>> {
     }
 }
 
-/// Local tty link: termios setup via an `stty` subprocess (the crate
-/// targets routers whose shells own that job; identical settings to the
-/// ssh relay) and plain File I/O — read deadlines are served by the
-/// AT engine's nonblocking path.
+/// Human-readable trace of the LAST transport open attempt (round 3,
+/// 2026-11-21: the deployed agent could only say "silent" — the
+/// heartbeat now carries this so live runs show exactly how far each
+/// open got: stty result, device open, deadline-arm verification).
+static OPEN_REPORT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn set_open_report(msg: String) {
+    *OPEN_REPORT.lock().unwrap_or_else(|e| e.into_inner()) = Some(msg);
+}
+
+/// The last transport-open report, if any (see [`open`]).
+pub fn last_open_report() -> Option<String> {
+    OPEN_REPORT
+    .lock()
+    .unwrap_or_else(|e| e.into_inner())
+    .clone()
+}
+
+/// Local tty link: NATIVE termios setup (round 4: the deployed OpenWrt
+/// router has NO stty binary — busybox without the applet, broken apk
+/// feed — so the old `stty -F … raw -echo min 1 time 0` spawn failed
+/// with ENOENT and silently left the tty in canonical mode, where
+/// reads block on line boundaries (VMIN/VTIME are ignored under
+/// ICANON — the round-2 live hang) and kernel ECHO/line buffering
+/// garble the modem link both ways). See `SerialLink::configure_raw`.
 pub struct SerialLink {
     file: std::fs::File,
 }
 
+impl SerialLink {
+    /// Configure the tty NATIVELY (round 4): `cfmakeraw` + B115200 +
+    /// CREAD|CLOCAL + VMIN=1/VTIME=0 — the exact semantics of the
+    /// `stty 115200 raw -echo min 1 time 0` this path used to spawn,
+    /// minus the external process (the deployed router has no stty
+    /// binary; the spawn's ENOENT left the tty canonical — reads
+    /// blocked on line boundaries with VMIN/VTIME ignored, and kernel
+    /// ECHO corrupted the modem exchange in both directions).
+    fn configure_raw(&mut self) -> io::Result<()> {
+        use std::os::unix::io::AsRawFd;
+        let fd = self.file.as_raw_fd();
+        // SAFETY: plain termios ioctls on our own fd; the termios
+        // struct is fully initialized by tcgetattr before use.
+        let mut tio: libc::termios = unsafe { std::mem::zeroed() };
+        if unsafe { libc::tcgetattr(fd, &mut tio) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        unsafe { libc::cfmakeraw(&mut tio) };
+        // CLOCAL: a USB modem tty has no carrier to wait for; CREAD:
+        // receiver on (belt and braces). Blocking base state — the AT
+        // engine poll-gates every read anyway (wait_readable).
+        tio.c_cflag |= libc::CREAD | libc::CLOCAL;
+        tio.c_cc[libc::VMIN] = 1;
+        tio.c_cc[libc::VTIME] = 0;
+        unsafe {
+            if libc::cfsetispeed(&mut tio, libc::B115200) != 0
+                || libc::cfsetospeed(&mut tio, libc::B115200) != 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            if libc::tcsetattr(fd, libc::TCSANOW, &tio) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Read for SerialLink {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.file.read(buf)
+        // On a tty there is no EOF: Ok(0) with VMIN=0/VTIME>0 armed can
+        // only mean the read deadline expired (a genuine hangup — USB
+        // modem gone — surfaces as EIO). Map it to WouldBlock so the
+        // AT engine's deadline loop treats it as "no data yet" instead
+        // of "peer closed" — the 2026-11-21 live hang: healthy serial
+        // exchanges sit silent for 300-400 ms (card-service floor)
+        // while at_full polls at 150 ms.
+        match self.file.read(buf) {
+            Ok(0) => Err(io::Error::new(io::ErrorKind::WouldBlock, "serial read deadline")),
+            other => other,
+        }
     }
 }
 
@@ -87,7 +194,37 @@ impl Write for SerialLink {
 }
 
 impl ModemLink for SerialLink {
-    fn set_read_timeout(&mut self, _d: Option<Duration>) -> io::Result<()> {
+    /// Real read deadline via termios VMIN/VTIME — the ONLY deadline a
+    /// plain tty offers (a socket-style SO_RCVTIMEO does not exist for
+    /// character devices). `Some(d)` arms VMIN=0 + VTIME=ceil(d to
+    /// 0.1 s) so a read can never block past ~d; `None` restores the
+    /// blocking VMIN=1/VTIME=0 the open-time stty set up. Without this
+    /// the AT engine's `set_read_timeout` was a no-op and a tty whose
+    /// AT window died mid-exchange hung the read in the kernel forever
+    /// — only the between-reads deadline check existed, which a
+    /// blocked read never reaches (NR7101 live test, sha 7e979f45).
+    fn set_read_timeout(&mut self, d: Option<Duration>) -> io::Result<()> {
+        use std::os::unix::io::AsRawFd;
+        let fd = self.file.as_raw_fd();
+        let mut tio: libc::termios = unsafe { std::mem::zeroed() };
+        if unsafe { libc::tcgetattr(fd, &mut tio) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        match d {
+            Some(d) => {
+                // VTIME is unsigned-char tenths of seconds (max 25.5 s)
+                let tenths = (d.as_millis() + 99) / 100;
+                tio.c_cc[libc::VTIME] = tenths.clamp(1, 255) as u8;
+                tio.c_cc[libc::VMIN] = 0;
+            }
+            None => {
+                tio.c_cc[libc::VTIME] = 0;
+                tio.c_cc[libc::VMIN] = 1;
+            }
+        }
+        if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &tio) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
         Ok(())
     }
     fn set_nonblocking(&mut self, nb: bool) -> io::Result<()> {
@@ -109,17 +246,38 @@ impl ModemLink for SerialLink {
         }
         Ok(())
     }
+    fn wait_readable(&mut self, d: Option<Duration>) -> io::Result<bool> {
+        use std::os::unix::io::AsRawFd;
+        poll_readable(self.file.as_raw_fd(), d)
+    }
 }
 
 fn open_serial(tty: &str) -> Option<Box<dyn ModemLink>> {
-    let _ = Command::new("stty")
-        .args(["-F", tty, "115200", "raw", "-echo", "min", "1", "time", "0"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
     match std::fs::OpenOptions::new().read(true).write(true).open(tty) {
-        Ok(file) => Some(Box::new(SerialLink { file })),
+        Ok(file) => {
+            let mut link = SerialLink { file };
+            // NATIVE termios, no external process (round 4 — see the
+            // SerialLink doc). A configure failure means the port is
+            // wedged or alien: fail the open (fast, honest retry)
+            // instead of serving a cooked-mode link.
+            let cfg = link.configure_raw().map_or_else(
+                |e| {
+                    set_open_report(format!("tty {tty}: open ok; native termios FAILED: {e}"));
+                    crate::log(&format!("serial termios configure on {} failed: {}", tty, e));
+                    None::<Box<dyn ModemLink>>
+                },
+                |()| {
+                    set_open_report(format!(
+                        "tty {tty}: open ok; native termios ok (raw, 115200, \
+                         VMIN=1/VTIME=0, no stty needed)"
+                    ));
+                    Some(Box::new(link) as Box<dyn ModemLink>)
+                },
+            );
+            cfg
+        }
         Err(e) => {
+            set_open_report(format!("tty {tty}: open FAILED: {e}"));
             crate::log(&format!("serial transport to {} failed: {}", tty, e));
             None
         }
@@ -134,12 +292,19 @@ fn open_tcp(target: &str) -> Option<Box<dyn ModemLink>> {
         match TcpStream::connect_timeout(&addr, Duration::from_secs(3)) {
             Ok(s) => {
                 let _ = s.set_nodelay(true);
+                set_open_report(format!("tcp {target}: connect ok ({addr})"));
                 return Some(Box::new(s));
             }
             Err(e) => last_err = Some(e),
         }
     }
     crate::log(&format!("connect {} failed: {:?}", target, last_err));
+    set_open_report(format!(
+        "tcp {target}: connect failed: {}",
+        last_err
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "no address".into())
+    ));
     None
 }
 
@@ -413,6 +578,31 @@ impl ModemLink for SshLink {
     fn set_nonblocking(&mut self, nb: bool) -> io::Result<()> {
         self.nonblocking = nb;
         Ok(())
+    }
+    fn wait_readable(&mut self, d: Option<Duration>) -> io::Result<bool> {
+        if self.buf_off < self.buf.len() {
+            return Ok(true); // buffered bytes are readable now
+        }
+        if self.eof {
+            return Ok(true); // let read() surface the EOF
+        }
+        match self.rx.recv_timeout(d.unwrap_or(Duration::MAX)) {
+            Ok(Ok(v)) => {
+                if v.is_empty() {
+                    self.eof = true; // remote EOF marker from the pump
+                } else {
+                    self.buf = v;
+                    self.buf_off = 0;
+                }
+                Ok(true)
+            }
+            Ok(Err(e)) => Err(e),
+            Err(RecvTimeoutError::Timeout) => Ok(false),
+            Err(RecvTimeoutError::Disconnected) => {
+                self.eof = true;
+                Ok(true)
+            }
+        }
     }
 }
 

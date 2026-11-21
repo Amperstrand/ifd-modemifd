@@ -161,6 +161,12 @@ impl Reader {
         let start = Instant::now();
         let mut echo_off: Option<usize> = None;
         let mut saw_prefix = false;
+        // Reads are poll(2)-gated and nonblocking: the exchange deadline
+        // must hold on EVERY transport without relying on termios
+        // VMIN/VTIME — the round-3 live lesson (deployed agent hung in
+        // a blocking serial read with the timer armed; a pty cannot
+        // reproduce a USB-serial tty refusing/ignoring termios).
+        let _ = stream.set_nonblocking(true);
         loop {
             if start.elapsed() >= total {
                 // deadline hit: the echo discriminator separates a
@@ -173,7 +179,19 @@ impl Reader {
                     AtOutcome::Ambiguous
                 };
             }
-            let _ = stream.set_read_timeout(Some(Duration::from_millis(150)));
+            let slice = Duration::from_millis(150).min(total - start.elapsed());
+            match stream.wait_readable(Some(slice)) {
+                Ok(true) => {}
+                Ok(false) => continue, // quiet slice; deadline re-checked
+                Err(_) => {
+                    *guard = None;
+                    return if echo_off.is_some() {
+                        AtOutcome::Refused
+                    } else {
+                        AtOutcome::Ambiguous
+                    };
+                }
+            }
             let mut chunk = [0u8; 1024];
             match stream.read(&mut chunk) {
                 Ok(0) => {

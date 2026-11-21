@@ -18,7 +18,8 @@ as a PC/SC reader. Goals in priority order:
     HOST (all local PC/SC, standard parts):        ROUTER (local to the modem):
       lpac → pcscd → libifdvpcd-amperstrand.so       modem-vpicc agent (Rust, musl)
                   ↖ vpcd protocol over LAN TCP  ←──   → AT+CSIM → SIM
-                    (agent connects OUT; vpcd         stty raw setup + File tty I/O,
+                    (agent connects OUT; vpcd         NATIVE termios raw setup +
+                      listener on a bound interface)    File tty I/O,
                      listens on a bound interface)    echo-correlation, 250 ms pacing,
                                                      strict CSIM parse, drop filters
 
@@ -33,11 +34,29 @@ ccid-firmware-rs campaign).
 ## Wire protocol (reference: org.amperstrand.VpcdBridge, bench-proven)
 
 - Frame = 2-byte big-endian length + payload.
-- 1-byte control payloads:
-  - `0x04` (RESET), `0x02` (ATR request) → reply one ATR frame;
-  - `0x00` (OFF) → **NO reply** (an empty ack de-syncs the driver's next
-    ATR probe — bench-verified); deselect semantics.
+- 1-byte control payloads (values per upstream `vpcd.h` @ the pinned
+  `93286a9`: OFF=0, ON=1, RESET=2, ATR=4):
+  - `0x04` (ATR request) → reply one ATR frame;
+  - `0x00` (OFF), `0x01` (ON), `0x02` (RESET) → **NO reply** (an empty
+    ack for OFF de-syncs the driver's next ATR probe — bench-verified;
+    and per upstream vpcd.c, `vicc_poweron`/`vicc_reset`/`vicc_poweroff`
+    are ALL send-only — the driver only ever reads after `vicc_getatr`
+    or an APDU, both of which it initiates itself. Answering ON or
+    RESET leaves a stale frame the driver's NEXT read consumes one
+    request late — the one-deep-skew class, round 5: an R-APDU silently
+    replaced by a stale ATR. `IFD_RESET` is always followed by the
+    driver's own ATR request, whose answer is the real reset ATR).
 - Length > 1 = C-APDU → reply one R-APDU frame (or status-word-only).
+- **Timing contract (2026-11-21 bench lesson,
+  docs/evidence/vpcd-handshake-debug/)**: the driver's presence poll
+  accepts the agent's connection within ~400 ms of connect and starts a
+  **2 s** answer window (`VPCD_RECV_TIMEOUT_SEC`,
+  libifdvpcd-amperstrand) per request — an unanswered request ejects the
+  socket. All slow work (modem handshake, transport open) must happen
+  BEFORE the vpcd connect; the serve loop must start reading the moment
+  connect returns. A handshake wedged between connect and serve loses
+  the window every cycle: driver-side FIN-WAIT-2, pcscd "no smart
+  card", silent reconnect churn.
 - The agent is the TCP **client** and reconnects every ~500 ms on error;
   a vpcd slot is single-client (never probe the port while owned).
 - Operational: after a pcscd restart the vpcd slot answers the ATR probe
@@ -58,7 +77,9 @@ ccid-firmware-rs campaign).
 - Logging matches the driver doctrine: opt-in, 0600, no-symlink, APDU
   content behind its own opt-in (v3.4.1 semantics).
 - No new packages on the router beyond what is disclosed in the tracker
-  (currently: GNU stty 9.7, modem-lane helper; the agent binary itself
+  (currently: modem-lane helper only — the tty is configured with
+  NATIVE termios, no stty binary needed (2026-11-21 round 4: this
+  router has none); the agent binary itself
   lives on flash, ~1–2 MB, deployed via scp with recorded sha256).
 
 ## Migration / sequencing
@@ -66,8 +87,8 @@ ccid-firmware-rs campaign).
 1. Frame codec + unit tests in this crate (std-only; same conventions).
 2. `modem-vpicc` agent binary in this crate (`[[bin]]`), reusing
    `at.rs`/`reader.rs` logic; `--target tcp://h:p` mode for mock tests,
-   `--target tty:/dev/ttyUSBx` for the router (stty subprocess + File
-   I/O keeps the crate std-only).
+   `--target tty:/dev/ttyUSBx[,…]` for the router (NATIVE termios via
+   libc — no stty dependency, no subprocess; poll(2)-gated reads).
 3. Host: build libifdvpcd-amperstrand.so (sibling script), reader entry
    (`DEVICENAME /dev/null:0x8C7B`, `CHANNELID <port>`), lane-runner vpcd
    mode reusing the namespace/env-injection/lock machinery.

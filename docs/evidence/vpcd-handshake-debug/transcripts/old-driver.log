@@ -1,0 +1,7 @@
+{"t": 1795249224.102, "event": "accept", "conn": 1}
+{"t": 1795249226.103, "event": "eject", "conn": 1, "reason": "answer window expired"}
+{"t": 1795249227.645, "event": "accept", "conn": 2}
+{"t": 1795249229.647, "event": "eject", "conn": 2, "reason": "answer window expired"}
+{"t": 1795249231.192, "event": "accept", "conn": 3}
+{"t": 1795249233.219, "event": "eject", "conn": 3, "reason": "answer window expired"}
+{"summary": {"accepts": 3, "answered": 0, "ejects": 3, "peer_closed": 0, "latencies_ms": []}}

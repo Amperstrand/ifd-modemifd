@@ -9,13 +9,25 @@ security requirements: `../tests/hardware/VPCD-ARCHITECTURE.md`.
 
 ## Usage
 
-    modem-vpicc --vpcd HOST:PORT --target tcp://HOST:PORT|tty:/dev/ttyUSBx \
+    modem-vpicc --vpcd HOST:PORT --target tcp://HOST:PORT|tty:/dev/ttyUSBx[,...] \
         [--atr-hex HEX] [--reconnect-ms N] [--log PATH]
 
 The agent opens no listening sockets; default ATR is the driver's
 FAKE_ATR for parity. `--reconnect-ms` floor is 100 ms (bounded
 reconnect). Logging is opt-in, 0600, no-symlink, fail-closed (v3.4.1
 doctrine).
+
+`--target` accepts a comma-separated list, tried in order every
+handshake cycle: this modem's AT windows flap between ports
+mid-session, so e.g. `--target tty:/dev/ttyUSB2,tty:/dev/ttyUSB3`
+follows the live window instead of pinning a dead port. Operational
+rules learned live (2026-11-21, `../docs/evidence/vpcd-handshake-debug/`):
+the modem handshake always runs BEFORE the vpcd connect (the patched
+driver gives every answer a 2 s window measured from accept); all
+reads are poll(2)-gated so no exchange can block on a wedged USB tty;
+handshake failures log a heartbeat (first attempt + every 20th)
+carrying the last transport-open report, and the success line names
+the winning target.
 
 ## Host build
 

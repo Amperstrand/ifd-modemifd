@@ -27,6 +27,7 @@ name = "modem-vpicc"
 version = "0.1.0"
 dependencies = [
  "ifd-modemifd",
+ "libc",
 ]
 
 [[package]]
