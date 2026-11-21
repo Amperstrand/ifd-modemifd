@@ -36,10 +36,16 @@ ccid-firmware-rs campaign).
 - Frame = 2-byte big-endian length + payload.
 - 1-byte control payloads (values per upstream `vpcd.h` @ the pinned
   `93286a9`: OFF=0, ON=1, RESET=2, ATR=4):
-  - `0x04` (ATR request), `0x02` (RESET) → reply one ATR frame;
-  - `0x00` (OFF), `0x01` (ON) → **NO reply** (an empty ack for OFF
-    de-syncs the driver's next ATR probe — bench-verified); deselect /
-    select semantics.
+  - `0x04` (ATR request) → reply one ATR frame;
+  - `0x00` (OFF), `0x01` (ON), `0x02` (RESET) → **NO reply** (an empty
+    ack for OFF de-syncs the driver's next ATR probe — bench-verified;
+    and per upstream vpcd.c, `vicc_poweron`/`vicc_reset`/`vicc_poweroff`
+    are ALL send-only — the driver only ever reads after `vicc_getatr`
+    or an APDU, both of which it initiates itself. Answering ON or
+    RESET leaves a stale frame the driver's NEXT read consumes one
+    request late — the one-deep-skew class, round 5: an R-APDU silently
+    replaced by a stale ATR. `IFD_RESET` is always followed by the
+    driver's own ATR request, whose answer is the real reset ATR).
 - Length > 1 = C-APDU → reply one R-APDU frame (or status-word-only).
 - **Timing contract (2026-11-21 bench lesson,
   docs/evidence/vpcd-handshake-debug/)**: the driver's presence poll

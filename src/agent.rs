@@ -83,13 +83,30 @@ fn handle_frame(
             Ok(())
         }
         Frame::Control(vpcd::CTRL_ON) => {
-            // upstream vicc_poweron(): ON is fire-and-forget too — no
-            // reply (vpcd.h; same no-ack rule as OFF)
+            // upstream vicc_poweron(): ON is send-only — the driver
+            // NEVER reads a reply (verified: the only reads live in
+            // vicc_transmit = getatr + APDUs; the amperstrand patch
+            // does not change this; both bench-proven vpicc clients —
+            // ESP32 vpcd.rs "fire-and-forget", VpcdBridge "OFF/ON: no
+            // reply" — stay silent). Answering would leave a stale
+            // frame the driver's NEXT read consumes one request late.
             wlog(log, "vpcd: ON (no reply)");
             Ok(())
         }
-        Frame::Control(vpcd::CTRL_ATR) | Frame::Control(vpcd::CTRL_RESET) => {
-            wlog(log, "vpcd: ATR/RESET -> ATR");
+        Frame::Control(vpcd::CTRL_RESET) => {
+            // upstream vicc_reset() is send-only too: IFDHPowerICC's
+            // RESET case always follows with its OWN getatr (an ATR
+            // control that IS read). Answering the RESET leaves a
+            // stale frame that shifts every later read one request
+            // late — invisible while all answers are ATRs, fatal the
+            // moment a C-APDU's R-APDU gets replaced by the stale ATR.
+            // (round 5; the proven clients answer RESET, but their
+            // benches never exercise RESET-followed-by-transmit.)
+            wlog(log, "vpcd: RESET (no reply — driver follows with its own ATR request)");
+            Ok(())
+        }
+        Frame::Control(vpcd::CTRL_ATR) => {
+            wlog(log, "vpcd: ATR request -> ATR");
             vpcd_sock.write_all(&vpcd::encode(atr))
         }
         Frame::Control(other) => {
@@ -97,6 +114,7 @@ fn handle_frame(
             Ok(())
         }
         Frame::Apdu(capdu) => {
+            wlog(log, "vpcd: APDU -> modem");
             let rapdu = match reader.transmit_with_timeout(&capdu, APDU_TIMEOUT) {
                 Ok(r) => r,
                 Err(()) => {

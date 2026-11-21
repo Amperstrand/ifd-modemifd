@@ -354,3 +354,75 @@ with "the tty path spawned stty"; the native build passes 14/14.
 
 Suite: agent 14/14; workspace 49 passed / 4 pre-existing
 logging-family failures (identical on pristine `c3e8096`, untouched).
+
+## Iteration 5 — SCardConnect follow-up (2026-11-21, round 5, deployed sha 4469435d)
+
+Live state after round 4: agent connects, stable ESTABLISHED session,
+answers every presence probe (ATR), ON/OFF handled — but PC/SC
+`SCardConnect` still fails "no smart card" (one attempt reached
+"Sharing violation" = a live card context existed from enumeration).
+Owner hypothesis: the driver expects a reply to ON.
+
+**Verdict on ON — refuted by driver source and both proven clients:**
+
+- upstream `vicc_poweron()` is SEND-ONLY (vpcd.c @ the pinned
+  `93286a9`): it never reads a reply; the amperstrand patch does not
+  touch it. The only reads in the whole driver live in
+  `vicc_transmit` — i.e. after `vicc_getatr` (the ATR control the
+  driver itself sends) and after APDUs.
+- `IFDHPowerICC(IFD_POWER_UP)` = send ON (no read) + immediately
+  `IFDHGetCapabilities(TAG_IFD_ATR)` = send ATR control + read one
+  frame. So the wire shape of a client connect is the burst
+  `[ON][ATR]`, answered by exactly ONE frame (the ATR).
+- both bench-proven vpicc clients stay silent on ON (ESP32 vpcd.rs:
+  `VPCD_CTRL_ON => None // fire-and-forget`; VpcdBridge.java:
+  "OFF/ON: no reply").
+- Answering ON would be actively harmful: the ON-reply would be
+  consumed by the following getatr's read, and every subsequent
+  answer lands one request late — a PERMANENT one-deep skew.
+
+**Real finding this round: the agent answered RESET — same skew
+class.** `vicc_reset()` is send-only too, and `IFDHPowerICC(IFD_RESET)`
+always follows with its own getatr. The agent (and, it turns out,
+both proven clients) answered RESET with an ATR; with this driver
+that leaves a stale frame in the socket queue shifting every later
+read one request late — invisible while all answers are ATRs (why
+the proven benches never noticed), fatal the moment a C-APDU's
+R-APDU is silently replaced by the stale ATR frame. Fixed: RESET is
+now no-reply (aligned to the driver's actual read pattern); the ATR
+answer the driver wants after a reset comes from the driver's own
+follow-up ATR request. Log lines split (ATR / RESET / APDU now
+distinct — round-6 live logs will discriminate).
+
+**Regression:** `pcscd_activation_sequence_stays_frame_aligned` —
+replays the strace-verified pcscd burst shapes (`[OFF][ON][ATR]`,
+`[RESET][ATR]` as single writes; see ccid-firmware-rs
+TRANSMIT_DEAD_WINDOW.md) and asserts: exactly ONE frame per burst
+(the ATR), silence after, and the NEXT APDU's answer is the modem's
+R-APDU, not a stale ATR. A/B-verified: making RESET answer again
+fails this test.
+
+**ATR well-formedness checked and cleared** (a malformed ATR would
+have explained presence-yes/connect-no): FAKE_ATR
+(3B 9F 96 80 1F 47 … 73) decodes as a structurally valid T=0 ATR
+(TA1=96, TA2=1F, K=15 historical, no TCK needed).
+
+**Remaining suspicion for round 6 (pcscd/driver-side, documented in
+the sibling repo):** TRANSMIT_DEAD_WINDOW.md pins a stall class
+inside pcscd + libifdvpcd where the card-present path works while
+the transmit/connect path does not route — observed there after
+pcscd restarts (~2 min self-heal), with their conftest needing
+retries + real-connect (never GetStatusChange) against real pcscd.
+The likely aggravator on our bench: pcscd added the reader while the
+agent was not yet connected → the add-time POWER_UP failed hard
+(IFD_COMMUNICATION_ERROR) → pcscd's reader context may not re-power
+without a card-removal/insertion transition. Operational
+discriminators for the next live test: (a) restart pcscd only AFTER
+the agent is connected and stable (add-time POWER_UP then succeeds
+against a live VICC); (b) retry SCardConnect for up to ~2 min;
+(c) use real SCardConnect, not GetStatusChange, when checking. If
+(a) fixes it, the durable cure is their candidate driver-side change
+("on VICC reconnect, force a full IFD re-init") — owner-gated.
+
+Suite: agent 15/15 (new activation-sequence regression); workspace
+unchanged (49 pass + the 4 pre-existing logging failures).

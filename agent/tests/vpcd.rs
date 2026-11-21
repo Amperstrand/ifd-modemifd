@@ -181,6 +181,19 @@ impl MockVpcd {
             .unwrap();
     }
 
+    /// Write pre-encoded bytes verbatim (multi-frame single-write —
+    /// the shape pcscd produces when POWER_UP sends back-to-back
+    /// controls in one syscall burst).
+    fn send_raw(&self, bytes: &[u8]) {
+        self.conn
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .write_all(bytes)
+            .unwrap();
+    }
+
     fn read_frame(&self) -> Option<Vec<u8>> {
         let mut conn = self.conn.lock().unwrap().take().unwrap();
         let frame = read_frame_blocking(&mut conn);
@@ -280,8 +293,17 @@ fn agent_speaks_the_vpcd_contract() {
         "OFF must get NO reply"
     );
 
+    // round 5: upstream vicc_reset() is send-only — the driver always
+    // follows a RESET with its OWN ATR request. Answering the RESET
+    // leaves a stale frame that shifts every later read one request
+    // late (an R-APDU would be replaced by the stale ATR).
     vpcd_srv.send(&[vpcd::CTRL_RESET]);
-    let atr2 = vpcd_srv.read_frame().expect("ATR frame after RESET");
+    assert!(
+        vpcd_srv.read_silence(Duration::from_millis(300)),
+        "RESET must get NO reply (the driver reads its next answer after its own ATR request)"
+    );
+    vpcd_srv.send(&[vpcd::CTRL_ATR]);
+    let atr2 = vpcd_srv.read_frame().expect("ATR frame after ATR request");
     assert_eq!(atr2, FAKE_ATR.to_vec());
 
     drop(sock);
@@ -745,6 +767,62 @@ fn tty_window_death_mid_handshake_is_bounded_and_recovers() {
         .recv_timeout(Duration::from_secs(8))
         .expect("recovery handshake did not return");
     assert!(handshake2, "handshake must succeed once the window reopens");
+}
+
+/// Round-5 regression — the FULL pcscd client-connect wire shape, and
+/// the one-deep-skew class. pcscd's POWER_UP sends controls
+/// back-to-back in one burst (strace-verified shape on this very
+/// driver: ccid-firmware-rs TRANSMIT_DEAD_WINDOW.md — [OFF?][ON][ATR]
+/// and IFD_RESET = [RESET][ATR], where ONLY the ATR request is ever
+/// read). The agent must answer exactly once per read-bearing request
+/// and never emit a frame for OFF/ON/RESET — any extra frame sits in
+/// the driver's socket queue and shifts every subsequent read one
+/// request late (an R-APDU silently replaced by a stale ATR).
+#[test]
+fn pcscd_activation_sequence_stays_frame_aligned() {
+    let (_modem, modem_addr) = MockModem::spawn();
+    let (vpcd_srv, vpcd_addr) = MockVpcd::spawn();
+    let mut agent = spawn_agent(&vpcd_addr, &modem_addr);
+    let _sock = vpcd_srv.accept_agent(Duration::from_secs(10));
+
+    // pcscd POWER_UP burst: [OFF][ON][ATR] in ONE write.
+    let mut burst = Vec::new();
+    burst.extend_from_slice(&vpcd::encode(&[vpcd::CTRL_OFF]));
+    burst.extend_from_slice(&vpcd::encode(&[vpcd::CTRL_ON]));
+    burst.extend_from_slice(&vpcd::encode(&[vpcd::CTRL_ATR]));
+    vpcd_srv.send_raw(&burst);
+    let atr = vpcd_srv.read_frame().expect("exactly one ATR after the burst");
+    assert_eq!(atr, FAKE_ATR.to_vec());
+    assert!(
+        vpcd_srv.read_silence(Duration::from_millis(300)),
+        "OFF and ON must produce NO frames — any stale frame desyncs the driver"
+    );
+
+    // IFD_RESET shape: [RESET][ATR] in ONE write — same rule.
+    let mut burst2 = Vec::new();
+    burst2.extend_from_slice(&vpcd::encode(&[vpcd::CTRL_RESET]));
+    burst2.extend_from_slice(&vpcd::encode(&[vpcd::CTRL_ATR]));
+    vpcd_srv.send_raw(&burst2);
+    let atr2 = vpcd_srv.read_frame().expect("exactly one ATR after RESET+ATR");
+    assert_eq!(atr2, FAKE_ATR.to_vec());
+    assert!(
+        vpcd_srv.read_silence(Duration::from_millis(300)),
+        "RESET must produce NO frame — the driver reads only after its own ATR request"
+    );
+
+    // alignment proof: the next APDU's answer must be THE APDU's
+    // answer, not a stale ATR frame (the observable skew symptom)
+    vpcd_srv.send(&[0x00, 0xA4, 0x00, 0x0C, 0x02, 0x3F, 0x00]);
+    let rapdu = vpcd_srv.read_frame().expect("R-APDU frame");
+    assert_eq!(
+        rapdu,
+        vec![0x90, 0x00],
+        "R-APDU must be the modem's answer — a stale ATR here is the one-deep skew"
+    );
+    assert!(vpcd_srv.read_silence(Duration::from_millis(300)));
+
+    let _ = agent.kill();
+    let _ = agent.wait();
 }
 
 /// Run one `init_handshake` against a tty target on a worker thread
