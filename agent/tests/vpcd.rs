@@ -756,6 +756,146 @@ fn reader_init_handshake_bounded(pts: &str) -> bool {
     reader.init_handshake()
 }
 
+/// Round-3 regression (deployed sha a8e772da hung with Threads:1 in a
+/// blocking serial read despite the VMIN/VTIME fix): the deadline
+/// primitive must be termios-INDEPENDENT. Sabotage the link into
+/// blocking termios (VMIN=1/VTIME=0 — read() would block forever on a
+/// silent port) and prove `wait_readable` still returns bounded.
+/// This is the exact invariant whose violation hung the hardware and
+/// which no pty could reproduce through the old read path.
+#[test]
+fn wait_readable_bounded_with_blocking_termios_armed() {
+    let (_master, pts) = open_pty(); // silent "modem": no data ever
+    let mut link = ifd_modemifd::transport::open(&format!("tty:{pts}")).expect("serial open");
+    // sabotage: restore the blocking VMIN=1/VTIME=0 open-time setup —
+    // models a USB tty where the VTIME arm does not take effect
+    link.set_read_timeout(None).expect("sabotage: blocking termios");
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(link.wait_readable(Some(Duration::from_millis(300))));
+    });
+    let t0 = Instant::now();
+    match rx.recv_timeout(Duration::from_secs(2)) {
+        Ok(Ok(false)) => {
+            assert!(t0.elapsed() >= Duration::from_millis(250), "returned suspiciously fast");
+        }
+        Ok(other) => panic!("expected Ok(false) timeout, got {other:?}"),
+        Err(_) => panic!(
+            "wait_readable never returned with blocking termios armed — \
+             the a8e772da hang class"
+        ),
+    }
+}
+
+/// Round-3 regression: the AT window dies MID-READ — the daemon echoes
+/// the command, starts the response, and goes silent before the final
+/// result code. The exchange must still fail bounded (deadline, not a
+/// kernel block), and the retry loop must catch a reopened window.
+#[test]
+fn tty_window_death_mid_read_is_bounded() {
+    let (master, pts) = open_pty();
+    // daemon: answer exchange 1 fully; on exchange 2 send echo + one
+    // stray byte of the response, then die
+    std::thread::spawn(move || {
+        let mut master = master;
+        let mut buf = Vec::new();
+        let mut exchanges = 0u32;
+        loop {
+            let mut b = [0u8; 1];
+            use std::io::Read;
+            match master.read(&mut b) {
+                Ok(n) if n > 0 => {}
+                _ => {
+                    buf.clear();
+                    std::thread::sleep(Duration::from_millis(10));
+                    continue;
+                }
+            }
+            if b[0] != b'\r' {
+                buf.push(b[0]);
+                continue;
+            }
+            let line = String::from_utf8_lossy(&buf).into_owned();
+            buf.clear();
+            if line.is_empty() {
+                continue;
+            }
+            exchanges += 1;
+            use std::io::Write;
+            if exchanges == 1 {
+                let _ = master.write_all(format!("\r\n{line}\r\n").as_bytes());
+                let _ = master.write_all(b"\r\n\r\nOK\r\n");
+            } else {
+                // echo + the beginning of a response, then the window dies
+                let _ = master.write_all(format!("\r\n{line}\r\n").as_bytes());
+                let _ = master.write_all(b"\r\n\r\nO");
+                return; // daemon gone; the stray byte is all there is
+            }
+        }
+    });
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let target = format!("tty:{pts}");
+    std::thread::spawn(move || {
+        let reader = ifd_modemifd::reader::Reader::new(&target);
+        let _ = tx.send(reader.init_handshake());
+    });
+    let got = rx
+        .recv_timeout(Duration::from_secs(8))
+        .expect("init_handshake never returned — mid-read window death hung it (a8e772da class)");
+    assert!(!got, "handshake must fail bounded when the window dies mid-read");
+}
+
+/// Round-3 feature regression — this modem's AT windows FLAP BETWEEN
+/// PORTS mid-session: `--target a,b` must fall through a dead first
+/// target and serve through the live second (here: refused TCP +
+/// a live pty modem).
+#[test]
+fn multi_target_falls_through_dead_port_to_live_one() {
+    let (_modem, live_pts) = PtyModem::spawn(None); // window open
+    let (driver, vpcd_addr) = DriverMock::spawn();
+    let mut agent = Command::new(env!("CARGO_BIN_EXE_modem-vpicc"))
+        .args([
+            "--vpcd",
+            &vpcd_addr,
+            "--target",
+            &format!("tcp://127.0.0.1:1,tty:{live_pts}"),
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn modem-vpicc");
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let answered = driver.events.answered.lock().unwrap().len();
+        if answered >= 3 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "agent never served through the live second target — {}",
+            driver.events.summary()
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    let events = driver.events.summary();
+    assert_eq!(
+        driver.events.ejects.load(Ordering::SeqCst),
+        0,
+        "no ejects — {events}"
+    );
+    assert_eq!(
+        driver.events.accepts.load(Ordering::SeqCst),
+        1,
+        "one connection via the live target — {events}"
+    );
+    let _ = agent.kill();
+    let _ = agent.wait();
+}
+
 /// Agent-level regression — the full production steady state through
 /// the REAL binary on a REAL tty: AT window closed at boot (handshake
 /// cycles bounded, agent stays OFF the vpcd listener), window opens

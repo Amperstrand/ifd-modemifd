@@ -231,3 +231,75 @@ Expected steady state on the router (owner's framing): handshake fails
 fast while AT-dead, retry every 500 ms, connect the moment a window
 opens, serve until it closes; the serve loop already tolerates
 session-end (bounded `at_full` + reconnect).
+
+## Iteration 3 — round-2 live test follow-up (2026-11-21, deployed sha a8e772da)
+
+The VMIN/VTIME build STILL hung: three restarts (ttyUSB2 in-window,
+ttyUSB2 dead-port, ttyUSB3 in-window — all identical) showed only the
+config line, no failure heartbeat, no connect. Kernel evidence from
+the owner: `State S`, **`Threads: 1`**, empty wchan, single fd to the
+target tty held open.
+
+Analysis notes:
+
+- `Threads: 1` is EXPECTED for this agent — the only pump thread in
+  the transport layer belongs to the ssh link (`modemifd-ssh-pump`);
+  the tty path is deliberately single-threaded. The smoking gun is not
+  the thread count but the never-returning blocking read.
+- The VMIN/VTIME arm demonstrably works on a pty (round-2 tests) yet
+  did not bound the read on the real option-driver USB tty. The
+  plausible hardware-side mechanisms — `tcsetattr` failing silently
+  (EIO on a wedged port; `at_full` ignored the Result), or the
+  arm not taking effect on that fd — cannot be reproduced by a pty,
+  which always honors termios. Conclusion: **the exchange deadline
+  must not depend on termios state at all.**
+
+Fix (this round):
+
+1. **poll(2)-gated reads** — `ModemLink::wait_readable(d)` (new trait
+   method) implemented as `poll(2)` on the raw fd for `SerialLink` and
+   `TcpStream`, and as a channel `recv_timeout` for `SshLink`.
+   `at_full` now loops `wait_readable(150 ms slice) → nonblocking
+   read`; it never calls `set_read_timeout` and never issues a
+   blocking read. Boundedness is by construction on every fd kind,
+   including a USB tty that refuses or ignores termios.
+2. **Live open-diagnostics** — `transport::last_open_report()`: every
+   open attempt records stty exit status, device-open result, and
+   whether the termios deadline arm was accepted (`ok` vs
+   `REFUSED: <errno>`); `open_serial` also verifies the arm at open
+   time. The agent's failure heartbeat now carries the report
+   ("no target answered (attempt N); last open: tty /dev/ttyUSB2:
+   stty ok; open ok; termios arm REFUSED: …"), and the success line
+   names the winning target. Live runs can no longer be silent about
+   where they stopped.
+3. **Multi-target `--target`** (the mid-session port flap the owner
+   documented: ttyUSB2 dead 60 s later while ttyUSB3 was alive):
+   comma-separated list, one cached Reader per target, tried in order
+   every cycle — the agent follows the window across ports instead of
+   pinning the dead one. e.g.
+   `--target tty:/dev/ttyUSB2,tty:/dev/ttyUSB3`.
+   Per-cycle cost while fully AT-dead: one ATE1 deadline (~2 s) per
+   target.
+
+Regression tests added (suite now 13):
+
+- `wait_readable_bounded_with_blocking_termios_armed` — the round-3
+  invariant: with termios deliberately sabotaged back to blocking
+  VMIN=1/VTIME=0, `wait_readable` still returns bounded. This is the
+  exact violation class that hung the hardware and that no pty could
+  reproduce through the read path.
+- `tty_window_death_mid_read_is_bounded` — the daemon echoes the
+  command, emits one stray byte of the response, then dies: the
+  exchange fails bounded (deadline), no kernel block.
+- `multi_target_falls_through_dead_port_to_live_one` — dead first
+  target (connection refused) + live pty second: the agent serves
+  through the second with one connection and zero ejects.
+
+Validation: agent suite 13/13; full workspace 48 passed with 4
+pre-existing failures — all in the logging family
+(`logging_enabled`, `logging_repair` ×2, `logging_symlink`), verified
+identical on pristine `c3e8096` (bench-environmental, untouched by
+this branch); the transport-facing suites (`mock_at` 28, ssh,
+pacing, vpcd 13) are green. Loopback driver-machine repro on the new
+release binary: accepts=1, answered=26, ejects=0 (unchanged vpcd
+behavior).

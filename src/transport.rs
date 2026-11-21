@@ -34,6 +34,39 @@ use std::time::Duration;
 pub trait ModemLink: Read + Write + Send {
     fn set_read_timeout(&mut self, d: Option<Duration>) -> io::Result<()>;
     fn set_nonblocking(&mut self, nb: bool) -> io::Result<()>;
+    /// Block until the link has readable data or `d` elapses —
+    /// poll(2)-based where a raw fd exists. Returns Ok(true) when a
+    /// read should be attempted (data ready OR hangup surfaced),
+    /// Ok(false) on timeout. This is the AT engine's ONLY deadline
+    /// primitive as of 2026-11-21 round 3: termios VMIN/VTIME proved
+    /// unreliable on the real option-driver USB tty (the deployed
+    /// agent hung in a blocking read with the deadline armed — pty
+    /// tests could not reproduce), so boundedness must not depend on
+    /// termios state at all.
+    fn wait_readable(&mut self, d: Option<Duration>) -> io::Result<bool>;
+}
+
+fn poll_readable(fd: std::os::unix::io::RawFd, d: Option<Duration>) -> io::Result<bool> {
+    let mut pfd = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    let ms = d
+        .map(|x| x.as_millis().min(i32::MAX as u128) as i32)
+        .unwrap_or(-1);
+    // SAFETY: poll(2) on a borrowed fd with a valid pfd; EINTR retried.
+    let rc = unsafe { libc::poll(&mut pfd, 1, ms) };
+    if rc < 0 {
+        let err = io::Error::last_os_error();
+        if err.kind() == io::ErrorKind::Interrupted {
+            return Ok(false);
+        }
+        return Err(err);
+    }
+    // POLLHUP/POLLERR also count as "readable": the following read()
+    // then surfaces the EOF/error instead of the deadline spinning.
+    Ok(rc > 0 && (pfd.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR)) != 0)
 }
 
 impl ModemLink for TcpStream {
@@ -42,6 +75,10 @@ impl ModemLink for TcpStream {
     }
     fn set_nonblocking(&mut self, nb: bool) -> io::Result<()> {
         TcpStream::set_nonblocking(self, nb)
+    }
+    fn wait_readable(&mut self, d: Option<Duration>) -> io::Result<bool> {
+        use std::os::unix::io::AsRawFd;
+        poll_readable(self.as_raw_fd(), d)
     }
 }
 
@@ -54,6 +91,7 @@ pub fn open(target: &str) -> Option<Box<dyn ModemLink>> {
         match open_ssh(rest) {
             Ok(l) => Some(Box::new(l)),
             Err(e) => {
+                set_open_report(format!("ssh {target}: spawn failed: {e}"));
                 crate::log(&format!("ssh transport to {} failed: {}", target, e));
                 None
             }
@@ -61,6 +99,24 @@ pub fn open(target: &str) -> Option<Box<dyn ModemLink>> {
     } else {
         open_tcp(target)
     }
+}
+
+/// Human-readable trace of the LAST transport open attempt (round 3,
+/// 2026-11-21: the deployed agent could only say "silent" — the
+/// heartbeat now carries this so live runs show exactly how far each
+/// open got: stty result, device open, deadline-arm verification).
+static OPEN_REPORT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn set_open_report(msg: String) {
+    *OPEN_REPORT.lock().unwrap_or_else(|e| e.into_inner()) = Some(msg);
+}
+
+/// The last transport-open report, if any (see [`open`]).
+pub fn last_open_report() -> Option<String> {
+    OPEN_REPORT
+    .lock()
+    .unwrap_or_else(|e| e.into_inner())
+    .clone()
 }
 
 /// Local tty link: termios setup via an `stty` subprocess (the crate
@@ -149,17 +205,39 @@ impl ModemLink for SerialLink {
         }
         Ok(())
     }
+    fn wait_readable(&mut self, d: Option<Duration>) -> io::Result<bool> {
+        use std::os::unix::io::AsRawFd;
+        poll_readable(self.file.as_raw_fd(), d)
+    }
 }
 
 fn open_serial(tty: &str) -> Option<Box<dyn ModemLink>> {
-    let _ = Command::new("stty")
+    let stty = Command::new("stty")
         .args(["-F", tty, "115200", "raw", "-echo", "min", "1", "time", "0"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
+    let stty_note = match &stty {
+        Ok(s) if s.success() => "stty ok".to_string(),
+        Ok(s) => format!("stty exited {s} (continuing — flags may be partial)"),
+        Err(e) => format!("stty spawn failed: {e}"),
+    };
     match std::fs::OpenOptions::new().read(true).write(true).open(tty) {
-        Ok(file) => Some(Box::new(SerialLink { file })),
+        Ok(file) => {
+            let mut link = SerialLink { file };
+            // Verify the read-deadline mechanism AT OPEN: arm VMIN/VTIME
+            // once and record whether termios accepted it. at_full no
+            // longer depends on this (poll-gated reads), but a refusal
+            // here is the live signature of a wedged USB tty.
+            let arm = link
+                .set_read_timeout(Some(Duration::from_millis(150)))
+                .map(|_| "ok".to_string())
+                .unwrap_or_else(|e| format!("REFUSED: {e}"));
+            set_open_report(format!("tty {tty}: {stty_note}; open ok; termios arm {arm}"));
+            Some(Box::new(link))
+        }
         Err(e) => {
+            set_open_report(format!("tty {tty}: {stty_note}; open FAILED: {e}"));
             crate::log(&format!("serial transport to {} failed: {}", tty, e));
             None
         }
@@ -174,12 +252,19 @@ fn open_tcp(target: &str) -> Option<Box<dyn ModemLink>> {
         match TcpStream::connect_timeout(&addr, Duration::from_secs(3)) {
             Ok(s) => {
                 let _ = s.set_nodelay(true);
+                set_open_report(format!("tcp {target}: connect ok ({addr})"));
                 return Some(Box::new(s));
             }
             Err(e) => last_err = Some(e),
         }
     }
     crate::log(&format!("connect {} failed: {:?}", target, last_err));
+    set_open_report(format!(
+        "tcp {target}: connect failed: {}",
+        last_err
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "no address".into())
+    ));
     None
 }
 
@@ -453,6 +538,31 @@ impl ModemLink for SshLink {
     fn set_nonblocking(&mut self, nb: bool) -> io::Result<()> {
         self.nonblocking = nb;
         Ok(())
+    }
+    fn wait_readable(&mut self, d: Option<Duration>) -> io::Result<bool> {
+        if self.buf_off < self.buf.len() {
+            return Ok(true); // buffered bytes are readable now
+        }
+        if self.eof {
+            return Ok(true); // let read() surface the EOF
+        }
+        match self.rx.recv_timeout(d.unwrap_or(Duration::MAX)) {
+            Ok(Ok(v)) => {
+                if v.is_empty() {
+                    self.eof = true; // remote EOF marker from the pump
+                } else {
+                    self.buf = v;
+                    self.buf_off = 0;
+                }
+                Ok(true)
+            }
+            Ok(Err(e)) => Err(e),
+            Err(RecvTimeoutError::Timeout) => Ok(false),
+            Err(RecvTimeoutError::Disconnected) => {
+                self.eof = true;
+                Ok(true)
+            }
+        }
     }
 }
 

@@ -24,7 +24,12 @@ const APDU_TIMEOUT: Duration = Duration::from_millis(1500);
 
 pub struct AgentConfig {
     pub vpcd_addr: String,
-    pub target: String,
+    /// One or more modem targets, tried in order every cycle (round 3:
+    /// this modem's AT windows FLAP BETWEEN PORTS mid-session —
+    /// ttyUSB2 dead while ttyUSB3 is alive — so the agent must
+    /// re-detect the live port every handshake cycle, not hold one).
+    /// Comma-separated in `--target`.
+    pub targets: Vec<String>,
     pub atr: Vec<u8>,
     pub reconnect_ms: u64,
     pub log_path: Option<String>,
@@ -111,23 +116,32 @@ pub fn run(cfg: AgentConfig) {
     wlog(
         &mut log,
         &format!(
-            "modem-vpicc: vpcd={} target={} atr={}B reconnect={}ms",
+            "modem-vpicc: vpcd={} targets=[{}] atr={}B reconnect={}ms",
             cfg.vpcd_addr,
-            cfg.target,
+            cfg.targets.join(", "),
             cfg.atr.len(),
             cfg.reconnect_ms
         ),
     );
-    // The Reader (and its cached modem stream) survives reconnects —
-    // same doctrine as the bench-proven firmware client (ccid-firmware-rs
-    // vpcd.rs #349: connection-local state must not reset process state).
-    let reader = Reader::new(&cfg.target);
-    // Live-state visibility (2026-11-21 live test): this modem's AT
+    // One Reader per target, constructed once and surviving reconnects
+    // (firmware-client #349 doctrine; also stops re-spawning stty per
+    // reconnect on the router). Each cycle tries targets in order —
+    // the first whose handshake succeeds is the one served, so a
+    // mid-session window flap between ports is followed on the next
+    // cycle instead of pinning a dead port.
+    let readers: Vec<(String, Reader)> = cfg
+        .targets
+        .iter()
+        .map(|t| (t.clone(), Reader::new(t)))
+        .collect();
+    // Live-state visibility (2026-11-21 live tests): this modem's AT
     // windows exist only ~minutes after a uqmi reset-mode poke, so
     // "handshake failing" is the NORMAL steady state for long
     // stretches. Log the first failure and then a slow heartbeat
-    // (every 20th attempt ≈ 10 s at the 500 ms cadence) instead of
-    // one line per retry, plus the recovery line when a window opens.
+    // (every 20th attempt ≈ 10 s at the 500 ms cadence) — carrying the
+    // transport open report so live runs show exactly how far each
+    // open got (stty result / device open / termios arm) — plus the
+    // recovery line when a window opens.
     let mut handshake_fails: u32 = 0;
     loop {
         // MODEM FIRST, VPCD SECOND (2026-11-21 bench bug, see
@@ -141,32 +155,45 @@ pub fn run(cfg: AgentConfig) {
         // Handshake before connect; enter the serve loop the instant
         // connect returns; stay unconnected while the modem is down
         // (reader honestly absent instead of vpcd churn).
-        if !reader.init_handshake() {
+        let mut winner: Option<&(String, Reader)> = None;
+        for entry in &readers {
+            if entry.1.init_handshake() {
+                winner = Some(entry);
+                break;
+            }
+        }
+        let Some((won_target, reader)) = winner else {
             handshake_fails += 1;
             if handshake_fails == 1 || handshake_fails.is_multiple_of(20) {
+                let report = crate::transport::last_open_report()
+                    .unwrap_or_else(|| "no open attempt".into());
                 wlog(
                     &mut log,
                     &format!(
-                        "modem-vpicc: modem handshake failed (attempt {handshake_fails}); not connecting to vpcd"
+                        "modem-vpicc: no target answered (attempt {handshake_fails} over {} target(s)); not connecting to vpcd; last open: {report}",
+                        readers.len()
                     ),
                 );
             }
             std::thread::sleep(Duration::from_millis(cfg.reconnect_ms));
             continue;
-        }
+        };
         if handshake_fails > 0 {
             wlog(
                 &mut log,
                 &format!(
-                    "modem-vpicc: AT window opened after {handshake_fails} failed handshake attempt(s)"
+                    "modem-vpicc: AT window opened on {won_target} after {handshake_fails} failed attempt(s)"
                 ),
             );
             handshake_fails = 0;
         }
         match TcpStream::connect(&cfg.vpcd_addr) {
             Ok(mut sock) => {
-                wlog(&mut log, "modem-vpicc: connected (modem handshake done pre-connect)");
-                if let Err(e) = serve_connection(&mut sock, &reader, &cfg.atr, &mut log) {
+                wlog(
+                    &mut log,
+                    &format!("modem-vpicc: connected via {won_target} (handshake done pre-connect)"),
+                );
+                if let Err(e) = serve_connection(&mut sock, reader, &cfg.atr, &mut log) {
                     wlog(&mut log, &format!("modem-vpicc: session ended: {e}"));
                 }
             }

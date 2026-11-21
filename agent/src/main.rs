@@ -45,6 +45,19 @@ fn main() {
         usage();
         std::process::exit(2);
     };
+    // Comma-separated targets, tried in order every cycle: this modem's
+    // AT windows flap between ports mid-session (ttyUSB2 dead while
+    // ttyUSB3 answers), so a list lets the agent follow the window
+    // instead of pinning one port. A single target behaves as before.
+    let targets: Vec<String> = target
+        .split(',')
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .collect();
+    if targets.is_empty() {
+        eprintln!("modem-vpicc: --target produced no usable target");
+        std::process::exit(2);
+    }
     if reconnect_ms < 100 {
         eprintln!("modem-vpicc: --reconnect-ms floor is 100ms (bounded reconnect)");
         std::process::exit(2);
@@ -52,7 +65,7 @@ fn main() {
 
     agent::run(AgentConfig {
         vpcd_addr,
-        target,
+        targets,
         atr,
         reconnect_ms,
         log_path,
@@ -61,7 +74,7 @@ fn main() {
 
 fn usage() {
     eprintln!(
-        "usage: modem-vpicc --vpcd HOST:PORT --target tcp://HOST:PORT|tty:/dev/ttyUSBx\n\
+        "usage: modem-vpicc --vpcd HOST:PORT --target tcp://HOST:PORT|tty:/dev/ttyUSBx[,...]\n\
          \x20\x20\x20\x20\x20\x20\x20\x20 [--atr-hex HEX] [--reconnect-ms N] [--log PATH]"
     );
 }
