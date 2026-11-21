@@ -47,6 +47,20 @@ referenced procedures to go from a stock NR7101 to a working eSIM router.
   `docs/MODEM-REFRESH-POLICY.md` for the full ladder
 - Register-level debug tool: `tools/gpiopoke/` (kernel module, dump-first)
 
+### ✅ vpcd PC/SC reader chain (modem-vpicc agent, 2026-11-21)
+- Full chain live-validated: pcscd (bench host) →
+  `libifdvpcd-amperstrand` :35963 ← `modem-vpicc` agent on the router
+  (tty → RG502Q) — real PC/SC session: SCardConnect (ATR served),
+  SELECT MF/EF.ICCID 9000, READ BINARY ICCID byte-perfect
+- Production-ready on windowed modems: handshake BEFORE vpcd connect
+  (the driver bounds every answer at 2 s), poll(2)-gated exchange
+  deadlines (termios-independent), NATIVE termios (no stty binary
+  needed — OpenWrt targets don't ship one), send-only ON/RESET
+  semantics, multi-port `--target tty:A,tty:B` (AT windows flap
+  between ports), bounded retries with live open-diagnostics
+- Five-round root-cause arc + evidence + repro kit:
+  `docs/evidence/vpcd-handshake-debug/` (merged 58392ab)
+
 ## What doesn't work yet
 
 | Blocker | Issue | Impact |
@@ -202,6 +216,7 @@ Consequences for operations:
 | `tools/modem/modem-guard/` | master (PR #50, 52b01c0) | Shutdown hook (lte-reset GPIO at shutdown) + boot health check + procd watchdog (CPIN probe, refresh-ladder escalation, budget+backoff, DEFAULT-STOP) — **landed 2026-10-26** |
 | `tests/hardware/at_csim_c0_battery.sh` | master | Corrected GET RESPONSE probe (the instrument that caught the 2C/C0 bug) |
 | `tests/hardware/onrouter-readonly-session.sh` | master | Read-only session-in-a-box (rehearsed, reviewer-amended) |
+| `agent/` (modem-vpicc binary) | master (58392ab) | vpcd vpicc agent for the modem SIM — plays the smartcard behind libifdvpcd; production-ready on windowed modems (15-test regression battery in `agent/tests/vpcd.rs`) |
 
 ## Open issues (known unknowns)
 
